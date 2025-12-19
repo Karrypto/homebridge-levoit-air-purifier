@@ -156,9 +156,14 @@ class VeSync {
             if (fs.existsSync(this.sessionFilePath)) {
                 const data = fs.readFileSync(this.sessionFilePath, 'utf8');
                 const session = JSON.parse(data);
+                // Immer terminalId und appId laden (um "neues Gerät" E-Mails zu vermeiden)
+                if (session.terminalId)
+                    this.terminalId = session.terminalId;
+                if (session.appId)
+                    this.appId = session.appId;
                 // Prüfe ob Token noch gültig (mit 5 Minuten Puffer)
                 if (session.expiresAt && Date.now() > (session.expiresAt - 5 * 60 * 1000)) {
-                    this.debugMode.debug('[SESSION]', 'Persisted session expired, will login fresh');
+                    this.debugMode.debug('[SESSION]', 'Persisted session expired, will login fresh (keeping device IDs)');
                     return null;
                 }
                 this.debugMode.debug('[SESSION]', 'Loaded persisted session');
@@ -178,10 +183,12 @@ class VeSync {
                 token: this.token,
                 accountId: this.accountId,
                 baseURL: this.baseURL,
-                expiresAt: this.tokenExpiresAt
+                expiresAt: this.tokenExpiresAt,
+                terminalId: this.terminalId,
+                appId: this.appId
             };
             fs.writeFileSync(this.sessionFilePath, JSON.stringify(session), 'utf8');
-            this.debugMode.debug('[SESSION]', 'Session persisted');
+            this.debugMode.debug('[SESSION]', 'Session persisted (with device IDs)');
         }
         catch (error) {
             this.debugMode.debug('[SESSION]', 'Failed to persist session:', error === null || error === void 0 ? void 0 : error.message);
@@ -320,6 +327,7 @@ class VeSync {
             this.accountId = persisted.accountId;
             this.baseURL = persisted.baseURL;
             this.tokenExpiresAt = persisted.expiresAt;
+            // Device IDs werden bereits in loadPersistedSession() geladen
             this.api = axios_1.default.create({
                 ...this.AXIOS_OPTIONS,
                 headers: {
@@ -332,7 +340,7 @@ class VeSync {
                     tk: this.token
                 }
             });
-            this.log.info('Reusing persisted VeSync session');
+            this.log.info('Reusing persisted VeSync session (no new login required)');
             this.debugMode.debug('[SESSION]', `Token expires: ${this.tokenExpiresAt ? new Date(this.tokenExpiresAt).toISOString() : 'unknown'}`);
         }
         else {
@@ -368,8 +376,17 @@ class VeSync {
             }
             this.debugMode.debug('[LOGIN]', 'Starting new auth flow...');
             const pwdHashed = crypto_1.default.createHash('md5').update(this.password).digest('hex');
-            const appId = generateAppId();
-            const terminalId = generateTerminalId();
+            // Reuse existing device IDs or generate new ones (prevents "new device" emails)
+            if (!this.appId) {
+                this.appId = generateAppId();
+                this.debugMode.debug('[LOGIN]', 'Generated new appId');
+            }
+            if (!this.terminalId) {
+                this.terminalId = generateTerminalId();
+                this.debugMode.debug('[LOGIN]', 'Generated new terminalId');
+            }
+            const appId = this.appId;
+            const terminalId = this.terminalId;
             const authHeaders = {
                 'Content-Type': 'application/json; charset=UTF-8',
                 'User-Agent': this.AGENT,

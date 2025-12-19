@@ -36,6 +36,8 @@ export default class VeSync {
     private token?;
     private tokenExpiresAt?;
     private loginInterval?;
+    private terminalId?;
+    private appId?;
     private readonly APP_VERSION;
     private readonly CLIENT_VERSION;
     private readonly COUNTRY_CODE;
