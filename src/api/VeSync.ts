@@ -162,7 +162,8 @@ export default class VeSync {
       appVersion: this.APP_VERSION,
       // VeSync erwartet hier in der Praxis mobile-like Felder
       phoneBrand: 'samsung',
-      traceId: Date.now(),
+      // traceId als String, da einige Backends bei Number-Format "illegal argument" liefern
+      traceId: String(Date.now()),
       phoneOS: this.OS
     };
   }
@@ -438,7 +439,8 @@ export default class VeSync {
           {
             email: this.email,
             password: pwdHashed,
-            devToken: this.DEVICE_ID,
+            // devToken muss beim Login leer sein; einige Backends lehnen self-generated IDs ab.
+            devToken: '',
             userType: 1,
             method: 'login',
             token: '',
