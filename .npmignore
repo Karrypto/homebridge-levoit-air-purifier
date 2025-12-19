@@ -101,7 +101,9 @@ web_modules/
 
 # Nuxt.js build / generate output
 .nuxt
-dist
+
+# dist MUSS im Paket enthalten sein (main zeigt auf dist/index.js)
+# dist
 
 # Gatsby files
 .cache/
