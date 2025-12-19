@@ -211,7 +211,13 @@ export default class VeSyncFan implements VeSyncGeneric {
         this._speed = result.level || result.fanSpeedLevel;
         this._mode = result.mode || result.workMode;
       } catch (err: any) {
-        this.client.log.error(err?.message);
+        const errorMessage = err?.response?.data 
+          ? JSON.stringify(err.response.data)
+          : err?.message || 'Unknown error';
+        this.client.log.error(
+          `Failed to update info for ${this.name}: ${errorMessage}`
+        );
+        this.client.debugMode.debug('[UPDATE INFO]', `Error for ${this.name}:`, errorMessage);
       }
     });
   }

@@ -4,6 +4,7 @@ export enum DeviceName {
   Core600S = '600S',
   Core401S = '401S',
   Core400S = '400S',
+  Core303S = '303S', // 300S Pro
   Core302S = '302S',
   Core301S = '301S',
   Core300S = '300S',
@@ -18,6 +19,7 @@ export enum HumidifierDeviceName {
   Dual200S = 'D301S',
 }
 
+const normalize = (input: string) => (input ?? '').toUpperCase();
 
 export interface DeviceType {
   isValid: (input: string) => boolean;
@@ -34,12 +36,16 @@ export type HumidifierDeviceType = Omit<DeviceType, 'hasPM25' | 'hasAirQuality'>
 
 const deviceTypes: DeviceType[] = [
   {
-    isValid: (input: string) =>
-      input.includes(DeviceName.Core602S) ||
-      input.includes(DeviceName.Core601S) ||
-      input.includes(DeviceName.Core600S) ||
-      input.includes(DeviceName.Core401S) ||
-      input.includes(DeviceName.Core400S),
+    isValid: (input: string) => {
+      const i = normalize(input);
+      return (
+        i.includes(DeviceName.Core602S) ||
+        i.includes(DeviceName.Core601S) ||
+        i.includes(DeviceName.Core600S) ||
+        i.includes(DeviceName.Core401S) ||
+        i.includes(DeviceName.Core400S)
+      );
+    },
     hasAirQuality: true,
     hasAutoMode: true,
     speedMinStep: 20,
@@ -47,10 +53,19 @@ const deviceTypes: DeviceType[] = [
     hasPM25: true
   },
   {
-    isValid: (input: string) =>
-      input.includes(DeviceName.Core302S) ||
-      input.includes(DeviceName.Core301S) ||
-      input.includes(DeviceName.Core300S),
+    isValid: (input: string) => {
+      const i = normalize(input);
+      // 300S Pro: je nach API/Region tauchen unterschiedliche Modelstrings auf,
+      // daher etwas toleranter matchen.
+      return (
+        i.includes(DeviceName.Core303S) || // 300S Pro (z.B. "...303S...")
+        i.includes('300S PRO') ||
+        i.includes('300SPRO') ||
+        i.includes(DeviceName.Core302S) ||
+        i.includes(DeviceName.Core301S) ||
+        i.includes(DeviceName.Core300S)
+      );
+    },
     hasAirQuality: true,
     hasAutoMode: true,
     speedMinStep: 25,
@@ -58,9 +73,13 @@ const deviceTypes: DeviceType[] = [
     hasPM25: true
   },
   {
-    isValid: (input: string) =>
-      (input.includes(DeviceName.Core201S) && !input.includes(DeviceName.Vital200S)) ||
-      input.includes(DeviceName.Core200S),
+    isValid: (input: string) => {
+      const i = normalize(input);
+      return (
+        (i.includes(DeviceName.Core201S) && !i.includes(DeviceName.Vital200S)) ||
+        i.includes(DeviceName.Core200S)
+      );
+    },
     hasAirQuality: false,
     hasAutoMode: false,
     speedMinStep: 25,
@@ -68,9 +87,10 @@ const deviceTypes: DeviceType[] = [
     hasPM25: false
   },
   {
-    isValid: (input: string) =>
-      input.includes(DeviceName.Vital100S) ||
-      input.includes(DeviceName.Vital200S),
+    isValid: (input: string) => {
+      const i = normalize(input);
+      return i.includes(DeviceName.Vital100S) || i.includes(DeviceName.Vital200S);
+    },
     hasAirQuality: true,
     hasAutoMode: true,
     speedMinStep: 25,
@@ -81,9 +101,10 @@ const deviceTypes: DeviceType[] = [
 
 export const humidifierDeviceTypes: HumidifierDeviceType[] = [
   {
-    isValid: (input: string) =>
-      input.includes(HumidifierDeviceName.Dual200S) ||
-      input.includes(HumidifierDeviceName.Dual200SLeg),
+    isValid: (input: string) => {
+      const i = normalize(input);
+      return i.includes(HumidifierDeviceName.Dual200S) || i.includes(HumidifierDeviceName.Dual200SLeg);
+    },
     hasAutoMode: true,
     speedMinStep: 50,
     speedLevels: 2,

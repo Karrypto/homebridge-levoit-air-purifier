@@ -78,6 +78,13 @@ export default class Platform implements DynamicPlatformPlugin {
       this.api.on('didFinishLaunching', () => {
         this.discoverDevices();
       });
+
+      // Homebridge Best Practice: Ressourcen sauber beenden (Intervals/Session).
+      // Siehe Homebridge Developer Docs: `https://developers.homebridge.io/#/`
+      this.api.on('shutdown', () => {
+        this.debugger.debug('[PLATFORM]', 'Shutdown received - stopping VeSync session...');
+        this.client?.stopSession();
+      });
     } catch (error: any) {
       this.log.error(`Error: ${error?.message}`);
     }

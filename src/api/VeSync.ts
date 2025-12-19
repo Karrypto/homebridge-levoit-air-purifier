@@ -33,14 +33,59 @@ const lock = new AsyncLock();
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// Retry-Logik mit exponential backoff
+const retryWithBackoff = async <T>(
+  fn: () => Promise<T>,
+  maxRetries = 3,
+  baseDelay = 1000,
+  retryableErrors?: number[]
+): Promise<T> => {
+  let lastError: any;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error: any) {
+      lastError = error;
+      const statusCode = error?.response?.status;
+      const errorCode = error?.response?.data?.code;
+      
+      // Prüfe ob Fehler retrybar ist
+      const isRetryable = 
+        statusCode === 429 || // Rate Limiting
+        statusCode === 503 || // Service Unavailable
+        statusCode === 502 || // Bad Gateway
+        statusCode === 504 || // Gateway Timeout
+        (statusCode >= 500 && statusCode < 600) || // Server Errors
+        (retryableErrors && retryableErrors.includes(errorCode)) ||
+        error?.code === 'ECONNRESET' ||
+        error?.code === 'ETIMEDOUT' ||
+        error?.code === 'ENOTFOUND';
+      
+      if (!isRetryable || attempt === maxRetries) {
+        throw error;
+      }
+      
+      // Exponential backoff: baseDelay * 2^attempt
+      const delayMs = baseDelay * Math.pow(2, attempt);
+      await delay(delayMs);
+    }
+  }
+  throw lastError;
+};
+
+const isTokenInvalidCode = (code: unknown) =>
+  code === -11012001 || code === -11012002;
+
 export default class VeSync {
   private api?: AxiosInstance;
   private accountId?: string;
   private token?: string;
   private loginInterval?: ReturnType<typeof setInterval>;
 
-  private readonly VERSION = '2.0.0';
-  private readonly AGENT = `VeSync/VeSync 3.0.51(F5321;HomeBridge-VeSync ${this.VERSION})`;
+  // VeSync Server blockiert gelegentlich zu alte appVersion Werte ("app version is too low").
+  // Daher nutzen wir hier eine "moderne" App-Version als Kompatibilitätswert.
+  private readonly APP_VERSION = '5.7.60';
+  private readonly AGENT = `VeSync/VeSync 3.0.51(F5321;HomeBridge-VeSync ${this.APP_VERSION})`;
   private readonly TIMEZONE = 'America/New_York';
   private readonly OS = 'HomeBridge-VeSync';
   private readonly LANG = 'en';
@@ -59,7 +104,7 @@ export default class VeSync {
 
   private generateDetailBody() {
     return {
-      appVersion: this.VERSION,
+      appVersion: this.APP_VERSION,
       phoneBrand: this.OS,
       traceId: Date.now(),
       phoneOS: this.OS
@@ -113,24 +158,46 @@ export default class VeSync {
           `with (${JSON.stringify(body)})...`
         );
 
-        const response = await this.api.put('cloud/v2/deviceManaged/bypassV2', {
-          ...this.generateV2Body(fan, method, body),
-          ...this.generateDetailBody(),
-          ...this.generateBody(true)
-        });
-
-        if (!response?.data) {
-          this.debugMode.debug(
-            '[SEND COMMAND]',
-            'No response data!! JSON:',
-            JSON.stringify(response)
+        // WICHTIG: Kein rekursiver Aufruf innerhalb des Locks (Deadlock-Risiko).
+        for (let attempt = 0; attempt < 2; attempt++) {
+          const response = await retryWithBackoff(
+            () =>
+              this.api!.put('cloud/v2/deviceManaged/bypassV2', {
+                ...this.generateV2Body(fan, method, body),
+                ...this.generateDetailBody(),
+                ...this.generateBody(true)
+              }),
+            3, // maxRetries
+            1000 // baseDelay
           );
-        }
 
-        const isSuccess = response?.data?.code === 0;
-        if (!isSuccess) {
+          if (!response?.data) {
+            this.debugMode.debug(
+              '[SEND COMMAND]',
+              'No response data!! JSON:',
+              JSON.stringify(response)
+            );
+            return false;
+          }
+
+          const isSuccess = response?.data?.code === 0;
+          if (isSuccess) {
+            await delay(500);
+            return true;
+          }
+
           const errorMsg = response?.data?.msg || 'Unknown error';
           const errorCode = response?.data?.code;
+
+          // Bei Token-Fehlern: EINMAL Re-Login und erneut versuchen (ohne Rekursion/Lock-Reentry)
+          if (isTokenInvalidCode(errorCode) && attempt === 0) {
+            this.debugMode.debug('[SEND COMMAND]', 'Token expired, attempting re-login...');
+            const loginSuccess = await this.loginInternal();
+            if (loginSuccess) {
+              continue;
+            }
+          }
+
           this.debugMode.debug(
             '[SEND COMMAND]',
             `Failed to send command ${method} to ${fan.name}`,
@@ -140,29 +207,29 @@ export default class VeSync {
           this.log.error(
             `Failed to send command ${method} to ${fan.name}: ${errorMsg} (Code: ${errorCode})`
           );
-          
-          // Bei Token-Fehlern versuche erneut nach Login
-          if (errorCode === -11012001 || errorCode === -11012002) {
-            this.debugMode.debug('[SEND COMMAND]', 'Token expired, attempting re-login...');
-            const loginSuccess = await this.login();
-            if (loginSuccess) {
-              // Versuche den Befehl erneut
-              return await this.sendCommand(fan, method, body);
-            }
-          }
+
+          await delay(500);
+          return false;
         }
 
-        await delay(500);
-
-        return isSuccess;
+        return false;
       } catch (error: any) {
+        const statusCode = error?.response?.status;
         const errorMessage = error?.response?.data 
           ? JSON.stringify(error.response.data)
           : error?.message || 'Unknown error';
-        this.log.error(
-          `Failed to send command ${method} to ${fan?.name}`,
-          `Error: ${errorMessage}`
-        );
+        
+        // Rate Limiting Fehler separat behandeln
+        if (statusCode === 429) {
+          this.log.warn(
+            `Rate limit erreicht für ${fan?.name}. Bitte warten...`
+          );
+        } else {
+          this.log.error(
+            `Failed to send command ${method} to ${fan?.name}`,
+            `Error: ${errorMessage}`
+          );
+        }
         this.debugMode.debug('[SEND COMMAND]', 'Error details:', errorMessage);
         return false;
       }
@@ -178,64 +245,81 @@ export default class VeSync {
 
         this.debugMode.debug('[GET DEVICE INFO]', 'Getting device info...');
 
-        const response = await this.api.post(
-          'cloud/v2/deviceManaged/bypassV2',
-          {
-            ...this.generateV2Body(fan, humidifier ? HumidifierBypassMethod.STATUS : BypassMethod.STATUS),
-            ...this.generateDetailBody(),
-            ...this.generateBody(true)
-          }
-        );
-
-        if (!response?.data) {
-          this.debugMode.debug(
-            '[GET DEVICE INFO]',
-            'No response data!! JSON:',
-            JSON.stringify(response)
+        // Kein rekursiver Aufruf innerhalb des Locks (Deadlock-Risiko).
+        for (let attempt = 0; attempt < 2; attempt++) {
+          const response = await retryWithBackoff(
+            () =>
+              this.api!.post('cloud/v2/deviceManaged/bypassV2', {
+                ...this.generateV2Body(
+                  fan,
+                  humidifier ? HumidifierBypassMethod.STATUS : BypassMethod.STATUS
+                ),
+                ...this.generateDetailBody(),
+                ...this.generateBody(true)
+              }),
+            3, // maxRetries
+            1000 // baseDelay
           );
-          return null;
-        }
 
-        // Prüfe auf API-Fehler
-        if (response.data.code !== 0 && response.data.code !== undefined) {
-          const errorMsg = response.data.msg || 'Unknown error';
-          const errorCode = response.data.code;
+          if (!response?.data) {
+            this.debugMode.debug(
+              '[GET DEVICE INFO]',
+              'No response data!! JSON:',
+              JSON.stringify(response)
+            );
+            return null;
+          }
+
+          // Prüfe auf API-Fehler
+          if (response.data.code !== 0 && response.data.code !== undefined) {
+            const errorMsg = response.data.msg || 'Unknown error';
+            const errorCode = response.data.code;
+            this.debugMode.debug(
+              '[GET DEVICE INFO]',
+              `API error: ${errorMsg} (Code: ${errorCode})`,
+              JSON.stringify(response.data)
+            );
+
+            if (isTokenInvalidCode(errorCode) && attempt === 0) {
+              this.debugMode.debug('[GET DEVICE INFO]', 'Token expired, attempting re-login...');
+              const loginSuccess = await this.loginInternal();
+              if (loginSuccess) {
+                continue;
+              }
+            }
+
+            return null;
+          }
+
+          await delay(500);
+
           this.debugMode.debug(
             '[GET DEVICE INFO]',
-            `API error: ${errorMsg} (Code: ${errorCode})`,
+            'JSON:',
             JSON.stringify(response.data)
           );
-          
-          // Bei Token-Fehlern versuche erneut nach Login
-          if (errorCode === -11012001 || errorCode === -11012002) {
-            this.debugMode.debug('[GET DEVICE INFO]', 'Token expired, attempting re-login...');
-            const loginSuccess = await this.login();
-            if (loginSuccess) {
-              // Versuche erneut
-              return await this.getDeviceInfo(fan, humidifier);
-            }
-          }
-          
-          return null;
+
+          return response.data;
         }
 
-        await delay(500);
-
-        this.debugMode.debug(
-          '[GET DEVICE INFO]',
-          'JSON:',
-          JSON.stringify(response.data)
-        );
-
-        return response.data;
+        return null;
       } catch (error: any) {
+        const statusCode = error?.response?.status;
         const errorMessage = error?.response?.data 
           ? JSON.stringify(error.response.data)
           : error?.message || 'Unknown error';
-        this.log.error(
-          `Failed to get device info for ${fan?.name}`,
-          `Error: ${errorMessage}`
-        );
+        
+        // Rate Limiting Fehler separat behandeln
+        if (statusCode === 429) {
+          this.log.warn(
+            `Rate limit erreicht beim Abrufen von Geräteinformationen für ${fan?.name}. Bitte warten...`
+          );
+        } else {
+          this.log.error(
+            `Failed to get device info for ${fan?.name}`,
+            `Error: ${errorMessage}`
+          );
+        }
         this.debugMode.debug('[GET DEVICE INFO]', 'Error details:', errorMessage);
 
         return null;
@@ -270,100 +354,106 @@ export default class VeSync {
   }
 
   private async login(): Promise<boolean> {
-    return lock.acquire('api-call', async () => {
-      try {
-        if (!this.email || !this.password) {
-          throw new Error('Email and password are required');
+    return lock.acquire('api-call', async () => this.loginInternal());
+  }
+
+  /**
+   * Login ohne Lock.acquire – nur aufrufen, wenn das Lock bereits gehalten wird.
+   * (Wichtig, um Deadlocks bei Token-Refresh innerhalb anderer API-Calls zu vermeiden.)
+   */
+  private async loginInternal(): Promise<boolean> {
+    try {
+      if (!this.email || !this.password) {
+        throw new Error('Email and password are required');
+      }
+
+      this.debugMode.debug('[LOGIN]', 'Logging in...');
+
+      const pwdHashed = crypto
+        .createHash('md5')
+        .update(this.password)
+        .digest('hex');
+
+      const response = await axios.post(
+        'cloud/v1/user/login',
+        {
+          email: this.email,
+          password: pwdHashed,
+          devToken: '',
+          userType: 1,
+          method: 'login',
+          token: '',
+          ...this.generateDetailBody(),
+          ...this.generateBody()
+        },
+        {
+          ...this.AXIOS_OPTIONS
         }
+      );
 
-        this.debugMode.debug('[LOGIN]', 'Logging in...');
-
-        const pwdHashed = crypto
-          .createHash('md5')
-          .update(this.password)
-          .digest('hex');
-
-        const response = await axios.post(
-          'cloud/v1/user/login',
-          {
-            email: this.email,
-            password: pwdHashed,
-            devToken: '',
-            userType: 1,
-            method: 'login',
-            token: '',
-            ...this.generateDetailBody(),
-            ...this.generateBody()
-          },
-          {
-            ...this.AXIOS_OPTIONS
-          }
+      if (!response?.data) {
+        this.debugMode.debug(
+          '[LOGIN]',
+          'No response data!! JSON:',
+          JSON.stringify(response)
         );
-
-        if (!response?.data) {
-          this.debugMode.debug(
-            '[LOGIN]',
-            'No response data!! JSON:',
-            JSON.stringify(response)
-          );
-          return false;
-        }
-
-        // Prüfe auf API-Fehler
-        if (response.data.code !== 0 && response.data.code !== undefined) {
-          this.debugMode.debug(
-            '[LOGIN]',
-            'The authentication failed!! JSON:',
-            JSON.stringify(response.data)
-          );
-          this.log.error(
-            `Login failed: ${response.data.msg || 'Unknown error'} (Code: ${response.data.code})`
-          );
-          return false;
-        }
-
-        const { result } = response.data;
-        const { token, accountID } = result ?? {};
-
-        if (!token || !accountID) {
-          this.debugMode.debug(
-            '[LOGIN]',
-            'The authentication failed!! JSON:',
-            JSON.stringify(response.data)
-          );
-          this.log.error('Login failed: Missing token or accountID');
-          return false;
-        }
-
-        this.debugMode.debug('[LOGIN]', 'The authentication success');
-
-        this.accountId = accountID;
-        this.token = token;
-
-        this.api = axios.create({
-          ...this.AXIOS_OPTIONS,
-          headers: {
-            'content-type': 'application/json',
-            'accept-language': this.LANG,
-            accountid: this.accountId!,
-            'user-agent': this.AGENT,
-            appversion: this.VERSION,
-            tz: this.TIMEZONE,
-            tk: this.token!
-          }
-        });
-
-        await delay(500);
-        return true;
-      } catch (error: any) {
-        const errorMessage = error?.response?.data 
-          ? JSON.stringify(error.response.data)
-          : error?.message || 'Unknown error';
-        this.log.error('Failed to login', `Error: ${errorMessage}`);
-        this.debugMode.debug('[LOGIN]', 'Login error details:', errorMessage);
         return false;
       }
-    });
+
+      // Prüfe auf API-Fehler
+      if (response.data.code !== 0 && response.data.code !== undefined) {
+        this.debugMode.debug(
+          '[LOGIN]',
+          'The authentication failed!! JSON:',
+          JSON.stringify(response.data)
+        );
+        this.log.error(
+          `Login failed: ${response.data.msg || 'Unknown error'} (Code: ${response.data.code})`
+        );
+        return false;
+      }
+
+      const { result } = response.data;
+      const { token, accountID } = result ?? {};
+
+      if (!token || !accountID) {
+        this.debugMode.debug(
+          '[LOGIN]',
+          'The authentication failed!! JSON:',
+          JSON.stringify(response.data)
+        );
+        this.log.error('Login failed: Missing token or accountID');
+        return false;
+      }
+
+      this.debugMode.debug('[LOGIN]', 'The authentication success');
+
+      this.accountId = accountID;
+      this.token = token;
+
+      this.api = axios.create({
+        ...this.AXIOS_OPTIONS,
+        headers: {
+          'content-type': 'application/json',
+          'accept-language': this.LANG,
+          accountid: this.accountId!,
+          'user-agent': this.AGENT,
+          appversion: this.APP_VERSION,
+          tz: this.TIMEZONE,
+          tk: this.token!
+        }
+      });
+
+      await delay(500);
+      return true;
+    } catch (error: any) {
+      const errorMessage = error?.response?.data
+        ? JSON.stringify(error.response.data)
+        : error?.message || 'Unknown error';
+      this.log.error('Failed to login', `Error: ${errorMessage}`);
+      this.debugMode.debug('[LOGIN]', 'Login error details:', errorMessage);
+      return false;
+    }
   }
 
   public async getDevices() {
@@ -376,83 +466,87 @@ export default class VeSync {
           throw new Error('The user is not logged in!');
         }
 
-        const response = await this.api.post('cloud/v2/deviceManaged/devices', {
-          method: 'devices',
-          pageNo: 1,
-          pageSize: 1000,
-          ...this.generateDetailBody(),
-          ...this.generateBody(true)
-        });
-
-        if (!response?.data) {
-          this.debugMode.debug(
-            '[GET DEVICES]',
-            'No response data!! JSON:',
-            JSON.stringify(response)
+        for (let attempt = 0; attempt < 2; attempt++) {
+          const response = await retryWithBackoff(
+            () =>
+              this.api!.post('cloud/v2/deviceManaged/devices', {
+                method: 'devices',
+                pageNo: 1,
+                pageSize: 1000,
+                ...this.generateDetailBody(),
+                ...this.generateBody(true)
+              }),
+            3, // maxRetries
+            1000 // baseDelay
           );
 
-          return {
-            purifiers: [],
-            humidifiers: []
-          };
-        }
+          if (!response?.data) {
+            this.debugMode.debug(
+              '[GET DEVICES]',
+              'No response data!! JSON:',
+              JSON.stringify(response)
+            );
 
-        // Prüfe auf API-Fehler
-        if (response.data.code !== 0 && response.data.code !== undefined) {
-          const errorMsg = response.data.msg || 'Unknown error';
-          const errorCode = response.data.code;
-          this.debugMode.debug(
-            '[GET DEVICES]',
-            `API error: ${errorMsg} (Code: ${errorCode})`,
-            JSON.stringify(response.data)
-          );
-          
-          // Bei Token-Fehlern versuche erneut nach Login
-          if (errorCode === -11012001 || errorCode === -11012002) {
-            this.debugMode.debug('[GET DEVICES]', 'Token expired, attempting re-login...');
-            const loginSuccess = await this.login();
-            if (loginSuccess) {
-              // Versuche erneut
-              return await this.getDevices();
-            }
+            return {
+              purifiers: [],
+              humidifiers: []
+            };
           }
-          
-          return {
-            purifiers: [],
-            humidifiers: []
-          };
-        }
 
-        if (!Array.isArray(response.data?.result?.list)) {
+          // Prüfe auf API-Fehler
+          if (response.data.code !== 0 && response.data.code !== undefined) {
+            const errorMsg = response.data.msg || 'Unknown error';
+            const errorCode = response.data.code;
+            this.debugMode.debug(
+              '[GET DEVICES]',
+              `API error: ${errorMsg} (Code: ${errorCode})`,
+              JSON.stringify(response.data)
+            );
+
+            if (isTokenInvalidCode(errorCode) && attempt === 0) {
+              this.debugMode.debug('[GET DEVICES]', 'Token expired, attempting re-login...');
+              const loginSuccess = await this.loginInternal();
+              if (loginSuccess) {
+                continue;
+              }
+            }
+
+            return {
+              purifiers: [],
+              humidifiers: []
+            };
+          }
+
+          if (!Array.isArray(response.data?.result?.list)) {
+            this.debugMode.debug(
+              '[GET DEVICES]',
+              'No list found!! JSON:',
+              JSON.stringify(response.data)
+            );
+
+            return {
+              purifiers: [],
+              humidifiers: []
+            };
+          }
+
+          const { list } = response.data.result ?? { list: [] };
+
           this.debugMode.debug(
             '[GET DEVICES]',
-            'No list found!! JSON:',
-            JSON.stringify(response.data)
+            'Device List -> JSON:',
+            JSON.stringify(list)
           );
 
-          return {
-            purifiers: [],
-            humidifiers: []
-          };
-        }
 
-        const { list } = response.data.result ?? { list: [] };
-
-        this.debugMode.debug(
-          '[GET DEVICES]',
-          'Device List -> JSON:',
-          JSON.stringify(list)
-        );
-
-
-        let purifiers = list
-          .filter(
-            ({ deviceType, type, extension }) =>
-              !!deviceTypes.find(({ isValid }) => isValid(deviceType)) &&
-              type === 'wifi-air' &&
-              !!extension?.fanSpeedLevel
-          )
-          .map(VeSyncFan.fromResponse(this));
+          let purifiers = list
+            .filter(
+              ({ deviceType, type, extension }) =>
+                !!deviceTypes.find(({ isValid }) => isValid(deviceType)) &&
+                type === 'wifi-air' &&
+                !!extension?.fanSpeedLevel
+            )
+            .map(VeSyncFan.fromResponse(this));
 
           // Newer Vital purifiers
           purifiers = purifiers.concat(list
@@ -465,26 +559,39 @@ export default class VeSync {
           .map((fan: any) => ({ ...fan, extension: { ...fan.deviceProp, airQualityLevel: fan.deviceProp.AQLevel, mode: fan.deviceProp.workMode } }))
           .map(VeSyncFan.fromResponse(this)));
 
-        const humidifiers = list
-          .filter(
-            ({ deviceType, type, extension }) =>
-              !!humidifierDeviceTypes.find(({ isValid }) => isValid(deviceType)) &&
-              type === 'wifi-air' &&
-              !extension
-          )
-          .map(VeSyncHumidifier.fromResponse(this));
+          const humidifiers = list
+            .filter(
+              ({ deviceType, type, extension }) =>
+                !!humidifierDeviceTypes.find(({ isValid }) => isValid(deviceType)) &&
+                type === 'wifi-air' &&
+                !extension
+            )
+            .map(VeSyncHumidifier.fromResponse(this));
 
-        await delay(1500);
+          await delay(1500);
+
+          return {
+            purifiers,
+            humidifiers
+          };
+        }
 
         return {
-          purifiers,
-          humidifiers
+          purifiers: [],
+          humidifiers: []
         };
       } catch (error: any) {
+        const statusCode = error?.response?.status;
         const errorMessage = error?.response?.data 
           ? JSON.stringify(error.response.data)
           : error?.message || 'Unknown error';
-        this.log.error('Failed to get devices', `Error: ${errorMessage}`);
+        
+        // Rate Limiting Fehler separat behandeln
+        if (statusCode === 429) {
+          this.log.warn('Rate limit erreicht beim Abrufen der Geräteliste. Bitte warten...');
+        } else {
+          this.log.error('Failed to get devices', `Error: ${errorMessage}`);
+        }
         this.debugMode.debug('[GET DEVICES]', 'Error details:', errorMessage);
         return {
           purifiers: [],
