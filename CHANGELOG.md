@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.4] - 2024-12-19
+
+### Fixed
+- **Prevent "new device" login emails**: Device IDs (terminalId, appId) are now persisted and reused across logins, so VeSync recognizes the plugin as the same device
+- **Fix undefined characteristic values**: Use nullish coalescing (??) instead of logical OR (||) to prevent undefined values when device properties are false
+- **Active characteristic**: Always returns 0 or 1, never undefined
+
 ## [1.0.3] - 2024-12-19
 
 ### Added
