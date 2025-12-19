@@ -1,6 +1,6 @@
 # Homebridge Levoit Air Purifier EU
 
-[![npm](https://img.shields.io/npm/v/homebridge-levoit-air-purifier-eu.svg)](https://www.npmjs.com/package/homebridge-levoit-air-purifier-eu)
+[![npm](https://img.shields.io/npm/v/homebridge-levoit-air-purifier-eu?cacheSeconds=3600)](https://www.npmjs.com/package/homebridge-levoit-air-purifier-eu)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
 A Homebridge plugin to control Levoit Air Purifiers via the VeSync platform with **EU endpoint support**.
