@@ -67,12 +67,11 @@ const retryWithBackoff = async (fn, maxRetries = 3, baseDelay = 1000, retryableE
             lastError = error;
             const statusCode = (_a = error === null || error === void 0 ? void 0 : error.response) === null || _a === void 0 ? void 0 : _a.status;
             const errorCode = (_c = (_b = error === null || error === void 0 ? void 0 : error.response) === null || _b === void 0 ? void 0 : _b.data) === null || _c === void 0 ? void 0 : _c.code;
-            // Prüfe ob Fehler retrybar ist
-            const isRetryable = statusCode === 429 || // Rate Limiting
-                statusCode === 503 || // Service Unavailable
-                statusCode === 502 || // Bad Gateway
-                statusCode === 504 || // Gateway Timeout
-                (statusCode >= 500 && statusCode < 600) || // Server Errors
+            const isRetryable = statusCode === 429 ||
+                statusCode === 503 ||
+                statusCode === 502 ||
+                statusCode === 504 ||
+                (statusCode >= 500 && statusCode < 600) ||
                 (retryableErrors && retryableErrors.includes(errorCode)) ||
                 (error === null || error === void 0 ? void 0 : error.code) === 'ECONNRESET' ||
                 (error === null || error === void 0 ? void 0 : error.code) === 'ETIMEDOUT' ||
@@ -80,7 +79,6 @@ const retryWithBackoff = async (fn, maxRetries = 3, baseDelay = 1000, retryableE
             if (!isRetryable || attempt === maxRetries) {
                 throw error;
             }
-            // Exponential backoff: baseDelay * 2^attempt
             const delayMs = baseDelay * Math.pow(2, attempt);
             await delay(delayMs);
         }
@@ -88,6 +86,27 @@ const retryWithBackoff = async (fn, maxRetries = 3, baseDelay = 1000, retryableE
     throw lastError;
 };
 const isTokenInvalidCode = (code) => code === -11012001 || code === -11012002;
+// Cross-Region und Credential Error Codes (aus tsvesync)
+const CROSS_REGION_ERROR_CODES = [-11260022, -11261022];
+const CREDENTIAL_ERROR_CODES = [-11201129];
+// Helper: Generiere 8-stellige alphanumerische App-ID
+function generateAppId() {
+    const chars = 'ABCDEFGHIJKLMNOPqRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    let result = '';
+    for (let i = 0; i < 8; i++) {
+        result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return result;
+}
+// Helper: Generiere 16-stellige Hex Terminal-ID
+function generateTerminalId() {
+    const chars = 'abcdef0123456789';
+    let result = '';
+    for (let i = 0; i < 16; i++) {
+        result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return result;
+}
 class VeSync {
     get AXIOS_OPTIONS() {
         return {
@@ -96,37 +115,29 @@ class VeSync {
         };
     }
     constructor(email, password, debugMode, log, options = {}) {
-        var _a, _b, _c, _d, _e;
+        var _a, _b, _c;
         this.email = email;
         this.password = password;
         this.debugMode = debugMode;
         this.log = log;
         this.options = options;
-        this.TIMEZONE = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
-        // Wir imitieren für die API bewusst ein Android-Device-Fingerprint, da VeSync Server teilweise nach Client-Typ gatekeept.
+        this.AGENT = 'okhttp/3.12.1';
+        this.TIMEZONE = Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/New_York';
         this.OS = 'Android';
         this.LANG = 'en';
-        this.APP_VERSION = (_a = this.options.appVersion) !== null && _a !== void 0 ? _a : '5.7.60';
+        this.PHONE_BRAND = 'SM N9005';
+        this.CLIENT_INFO = 'SM N9005';
+        this.APP_VERSION = (_a = this.options.appVersion) !== null && _a !== void 0 ? _a : '5.7.16';
+        this.CLIENT_VERSION = `VeSync ${this.APP_VERSION}`;
         this.COUNTRY_CODE = ((_b = this.options.countryCode) !== null && _b !== void 0 ? _b : 'US').toUpperCase();
-        // Stabile Device-ID: wenn nicht gesetzt, deterministisch aus der E-Mail ableiten,
-        // damit sich die "Device Identität" über Neustarts nicht ändert.
-        const emailKey = ((_c = this.email) !== null && _c !== void 0 ? _c : '').trim().toLowerCase();
-        const hex = crypto_1.default.createHash('md5').update(emailKey).digest('hex'); // 32 chars
-        // Einige Backends akzeptieren hier nur ein "Token"-Format ohne Trennzeichen.
-        this.DEVICE_ID = (_d = this.options.deviceId) !== null && _d !== void 0 ? _d : hex;
-        this.AGENT = `VeSync/VeSync ${this.APP_VERSION}(F5321;HomeBridge-VeSync)`;
-        // Endpoint-Handling: EU-Accounts laufen i. d. R. über smartapi.vesync.eu
-        this.baseURL = (_e = this.options.baseURL) !== null && _e !== void 0 ? _e : (this.isEuCountryCode(this.COUNTRY_CODE)
+        // Endpoint-Handling: EU-Accounts laufen über smartapi.vesync.eu
+        this.baseURL = (_c = this.options.baseURL) !== null && _c !== void 0 ? _c : (this.isEuCountryCode(this.COUNTRY_CODE)
             ? 'https://smartapi.vesync.eu'
             : 'https://smartapi.vesync.com');
     }
     isEuCountryCode(countryCode) {
-        // Basierend auf TSVESync Doku: EU Accounts => smartapi.vesync.eu
-        // (siehe https://github.com/mickgiles/homebridge-tsvesync)
         const euLike = new Set([
-            // EU27
             'AT', 'BE', 'BG', 'HR', 'CY', 'CZ', 'DK', 'EE', 'FI', 'FR', 'DE', 'GR', 'HU', 'IE', 'IT', 'LV', 'LT', 'LU', 'MT', 'NL', 'PL', 'PT', 'RO', 'SK', 'SI', 'ES', 'SE',
-            // EEA/Europe often routed to EU endpoint
             'GB', 'NO', 'IS', 'LI', 'CH'
         ]);
         return euLike.has((countryCode !== null && countryCode !== void 0 ? countryCode : '').toUpperCase());
@@ -139,9 +150,7 @@ class VeSync {
     generateDetailBody() {
         return {
             appVersion: this.APP_VERSION,
-            // VeSync erwartet hier in der Praxis mobile-like Felder
-            phoneBrand: 'samsung',
-            // traceId als String, da einige Backends bei Number-Format "illegal argument" liefern
+            phoneBrand: this.PHONE_BRAND,
             traceId: String(Date.now()),
             phoneOS: this.OS
         };
@@ -176,23 +185,20 @@ class VeSync {
     }
     async sendCommand(fan, method, body = {}) {
         return lock.acquire('api-call', async () => {
-            var _a, _b, _c, _d, _e;
+            var _a, _b, _c, _d;
             try {
                 if (!this.api) {
                     throw new Error('The user is not logged in!');
                 }
                 this.debugMode.debug('[SEND COMMAND]', `Sending command ${method} to ${fan.name}`, `with (${JSON.stringify(body)})...`);
-                // WICHTIG: Kein rekursiver Aufruf innerhalb des Locks (Deadlock-Risiko).
                 for (let attempt = 0; attempt < 2; attempt++) {
                     const response = await retryWithBackoff(() => this.api.put('cloud/v2/deviceManaged/bypassV2', {
                         ...this.generateV2Body(fan, method, body),
                         ...this.generateDetailBody(),
                         ...this.generateBody(true)
-                    }), 3, // maxRetries
-                    1000 // baseDelay
-                    );
+                    }), 3, 1000);
                     if (!(response === null || response === void 0 ? void 0 : response.data)) {
-                        this.debugMode.debug('[SEND COMMAND]', 'No response data!! JSON:', JSON.stringify(response));
+                        this.debugMode.debug('[SEND COMMAND]', 'No response data!!');
                         return false;
                     }
                     const isSuccess = ((_a = response === null || response === void 0 ? void 0 : response.data) === null || _a === void 0 ? void 0 : _a.code) === 0;
@@ -200,72 +206,48 @@ class VeSync {
                         await delay(500);
                         return true;
                     }
-                    const errorMsg = ((_b = response === null || response === void 0 ? void 0 : response.data) === null || _b === void 0 ? void 0 : _b.msg) || 'Unknown error';
-                    const errorCode = (_c = response === null || response === void 0 ? void 0 : response.data) === null || _c === void 0 ? void 0 : _c.code;
-                    // Bei Token-Fehlern: EINMAL Re-Login und erneut versuchen (ohne Rekursion/Lock-Reentry)
+                    const errorCode = (_b = response === null || response === void 0 ? void 0 : response.data) === null || _b === void 0 ? void 0 : _b.code;
                     if (isTokenInvalidCode(errorCode) && attempt === 0) {
-                        this.debugMode.debug('[SEND COMMAND]', 'Token expired, attempting re-login...');
+                        this.debugMode.debug('[SEND COMMAND]', 'Token expired, re-login...');
                         const loginSuccess = await this.loginInternal();
-                        if (loginSuccess) {
+                        if (loginSuccess)
                             continue;
-                        }
                     }
-                    this.debugMode.debug('[SEND COMMAND]', `Failed to send command ${method} to ${fan.name}`, `with (${JSON.stringify(body)})!`, `Response: ${JSON.stringify(response.data)}`);
-                    this.log.error(`Failed to send command ${method} to ${fan.name}: ${errorMsg} (Code: ${errorCode})`);
-                    await delay(500);
+                    this.log.error(`Failed to send command ${method}: ${(_c = response === null || response === void 0 ? void 0 : response.data) === null || _c === void 0 ? void 0 : _c.msg} (${errorCode})`);
                     return false;
                 }
                 return false;
             }
             catch (error) {
-                const statusCode = (_d = error === null || error === void 0 ? void 0 : error.response) === null || _d === void 0 ? void 0 : _d.status;
-                const errorMessage = ((_e = error === null || error === void 0 ? void 0 : error.response) === null || _e === void 0 ? void 0 : _e.data)
+                const errorMessage = ((_d = error === null || error === void 0 ? void 0 : error.response) === null || _d === void 0 ? void 0 : _d.data)
                     ? JSON.stringify(error.response.data)
                     : (error === null || error === void 0 ? void 0 : error.message) || 'Unknown error';
-                // Rate Limiting Fehler separat behandeln
-                if (statusCode === 429) {
-                    this.log.warn(`Rate limit erreicht für ${fan === null || fan === void 0 ? void 0 : fan.name}. Bitte warten...`);
-                }
-                else {
-                    this.log.error(`Failed to send command ${method} to ${fan === null || fan === void 0 ? void 0 : fan.name}`, `Error: ${errorMessage}`);
-                }
-                this.debugMode.debug('[SEND COMMAND]', 'Error details:', errorMessage);
+                this.log.error(`Failed to send command ${method}`, errorMessage);
                 return false;
             }
         });
     }
     async getDeviceInfo(fan, humidifier = false) {
         return lock.acquire('api-call', async () => {
-            var _a, _b;
             try {
                 if (!this.api) {
                     throw new Error('The user is not logged in!');
                 }
                 this.debugMode.debug('[GET DEVICE INFO]', 'Getting device info...');
-                // Kein rekursiver Aufruf innerhalb des Locks (Deadlock-Risiko).
                 for (let attempt = 0; attempt < 2; attempt++) {
                     const response = await retryWithBackoff(() => this.api.post('cloud/v2/deviceManaged/bypassV2', {
                         ...this.generateV2Body(fan, humidifier ? HumidifierBypassMethod.STATUS : BypassMethod.STATUS),
                         ...this.generateDetailBody(),
                         ...this.generateBody(true)
-                    }), 3, // maxRetries
-                    1000 // baseDelay
-                    );
-                    if (!(response === null || response === void 0 ? void 0 : response.data)) {
-                        this.debugMode.debug('[GET DEVICE INFO]', 'No response data!! JSON:', JSON.stringify(response));
+                    }), 3, 1000);
+                    if (!(response === null || response === void 0 ? void 0 : response.data))
                         return null;
-                    }
-                    // Prüfe auf API-Fehler
                     if (response.data.code !== 0 && response.data.code !== undefined) {
-                        const errorMsg = response.data.msg || 'Unknown error';
                         const errorCode = response.data.code;
-                        this.debugMode.debug('[GET DEVICE INFO]', `API error: ${errorMsg} (Code: ${errorCode})`, JSON.stringify(response.data));
                         if (isTokenInvalidCode(errorCode) && attempt === 0) {
-                            this.debugMode.debug('[GET DEVICE INFO]', 'Token expired, attempting re-login...');
                             const loginSuccess = await this.loginInternal();
-                            if (loginSuccess) {
+                            if (loginSuccess)
                                 continue;
-                            }
                         }
                         return null;
                     }
@@ -276,18 +258,8 @@ class VeSync {
                 return null;
             }
             catch (error) {
-                const statusCode = (_a = error === null || error === void 0 ? void 0 : error.response) === null || _a === void 0 ? void 0 : _a.status;
-                const errorMessage = ((_b = error === null || error === void 0 ? void 0 : error.response) === null || _b === void 0 ? void 0 : _b.data)
-                    ? JSON.stringify(error.response.data)
-                    : (error === null || error === void 0 ? void 0 : error.message) || 'Unknown error';
-                // Rate Limiting Fehler separat behandeln
-                if (statusCode === 429) {
-                    this.log.warn(`Rate limit erreicht beim Abrufen von Geräteinformationen für ${fan === null || fan === void 0 ? void 0 : fan.name}. Bitte warten...`);
-                }
-                else {
-                    this.log.error(`Failed to get device info for ${fan === null || fan === void 0 ? void 0 : fan.name}`, `Error: ${errorMessage}`);
-                }
-                this.debugMode.debug('[GET DEVICE INFO]', 'Error details:', errorMessage);
+                const errorMessage = (error === null || error === void 0 ? void 0 : error.message) || 'Unknown error';
+                this.log.error(`Failed to get device info for ${fan === null || fan === void 0 ? void 0 : fan.name}`, errorMessage);
                 return null;
             }
         });
@@ -295,11 +267,10 @@ class VeSync {
     async startSession() {
         this.debugMode.debug('[START SESSION]', 'Starting auth session...');
         const firstLoginSuccess = await this.login();
-        // Stoppe vorhandenes Interval, falls vorhanden
         if (this.loginInterval) {
             clearInterval(this.loginInterval);
         }
-        // Token alle 55 Minuten erneuern (Token ist 60 Minuten gültig)
+        // Token alle 55 Minuten erneuern
         this.loginInterval = setInterval(async () => {
             this.debugMode.debug('[TOKEN REFRESH]', 'Refreshing token...');
             await this.login();
@@ -317,79 +288,191 @@ class VeSync {
         return lock.acquire('api-call', async () => this.loginInternal());
     }
     /**
-     * Login ohne Lock.acquire – nur aufrufen, wenn das Lock bereits gehalten wird.
-     * (Wichtig, um Deadlocks bei Token-Refresh innerhalb anderer API-Calls zu vermeiden.)
+     * Neuer 2-Schritt-Auth-Flow (wie tsvesync)
+     * Step 1: authByPWDOrOTM -> authorizeCode
+     * Step 2: loginByAuthorizeCode4Vesync -> token, accountID
+     * Fallback: Legacy Login (/cloud/v1/user/login)
      */
     async loginInternal() {
-        var _a, _b, _c;
+        var _a, _b, _c, _d, _e;
         try {
             if (!this.email || !this.password) {
                 throw new Error('Email and password are required');
             }
-            this.debugMode.debug('[LOGIN]', 'Logging in...');
-            const pwdHashed = crypto_1.default
-                .createHash('md5')
-                .update(this.password)
-                .digest('hex');
-            // Manche Accounts schlagen fehl, wenn man den falschen regionalen Endpoint nutzt.
-            // Daher: erst aktueller baseURL, bei bestimmten Fehlern einmal den Alternate probieren.
-            const tryLoginOnce = async () => {
-                return axios_1.default.post('cloud/v1/user/login', {
-                    email: this.email,
-                    password: pwdHashed,
-                    // devToken muss beim Login leer sein; einige Backends lehnen self-generated IDs ab.
-                    devToken: '',
-                    userType: 1,
-                    method: 'login',
-                    token: '',
-                    ...this.generateDetailBody(),
-                    ...this.generateBody()
-                }, {
-                    ...this.AXIOS_OPTIONS,
-                    // Auch beim Login die erwarteten Header setzen (einige Backends prüfen appversion/user-agent bereits hier).
-                    headers: {
-                        'content-type': 'application/json',
-                        'accept-language': this.LANG,
-                        'user-agent': this.AGENT,
-                        appversion: this.APP_VERSION,
-                        tz: this.TIMEZONE,
-                    }
-                });
+            this.debugMode.debug('[LOGIN]', 'Starting new auth flow...');
+            const pwdHashed = crypto_1.default.createHash('md5').update(this.password).digest('hex');
+            const appId = generateAppId();
+            const terminalId = generateTerminalId();
+            const authHeaders = {
+                'Content-Type': 'application/json; charset=UTF-8',
+                'User-Agent': this.AGENT,
+                'accept-language': this.LANG,
+                'appVersion': this.APP_VERSION,
+                'clientVersion': this.CLIENT_VERSION
             };
-            let response = await tryLoginOnce();
-            if (!(response === null || response === void 0 ? void 0 : response.data)) {
-                this.debugMode.debug('[LOGIN]', 'No response data!! JSON:', JSON.stringify(response));
-                return false;
-            }
-            // Prüfe auf API-Fehler
-            if (response.data.code !== 0 && response.data.code !== undefined) {
-                // Fallback: auf anderen Endpoint wechseln und nochmals versuchen
-                // (VeSync liefert hier oft generische Fehlertexte, auch wenn eigentlich Region falsch ist)
-                const code = response.data.code;
-                if (code === -11012022) {
-                    const alternate = this.getAlternateBaseURL();
-                    if (alternate !== this.baseURL) {
-                        this.debugMode.debug('[LOGIN]', `Retrying login on alternate endpoint: ${alternate}`);
-                        this.baseURL = alternate;
-                        response = await tryLoginOnce();
+            // Versuche mit aktuellem Endpoint, dann ggf. alternate
+            for (const baseUrl of [this.baseURL, this.getAlternateBaseURL()]) {
+                this.debugMode.debug('[LOGIN]', `Trying endpoint: ${baseUrl}`);
+                // === STEP 1: Get Authorization Code ===
+                const step1Body = {
+                    email: this.email,
+                    method: 'authByPWDOrOTM',
+                    password: pwdHashed,
+                    acceptLanguage: this.LANG,
+                    accountID: '',
+                    authProtocolType: 'generic',
+                    clientInfo: this.CLIENT_INFO,
+                    clientType: 'vesyncApp',
+                    clientVersion: this.CLIENT_VERSION,
+                    debugMode: false,
+                    osInfo: this.OS,
+                    terminalId: terminalId,
+                    timeZone: this.TIMEZONE,
+                    token: '',
+                    userCountryCode: this.COUNTRY_CODE,
+                    appID: appId,
+                    sourceAppID: appId,
+                    traceId: `APP${appId}${Math.floor(Date.now() / 1000)}`
+                };
+                this.debugMode.debug('[LOGIN]', 'Step 1: Getting authorization code...');
+                try {
+                    const step1Response = await axios_1.default.post(`${baseUrl}/globalPlatform/api/accountAuth/v1/authByPWDOrOTM`, step1Body, { headers: authHeaders, timeout: 15000 });
+                    if (!(step1Response === null || step1Response === void 0 ? void 0 : step1Response.data) || step1Response.data.code !== 0) {
+                        const code = (_a = step1Response === null || step1Response === void 0 ? void 0 : step1Response.data) === null || _a === void 0 ? void 0 : _a.code;
+                        const msg = (_b = step1Response === null || step1Response === void 0 ? void 0 : step1Response.data) === null || _b === void 0 ? void 0 : _b.msg;
+                        this.debugMode.debug('[LOGIN]', `Step 1 failed: ${msg} (${code})`);
+                        // Bei Credential-Error sofort abbrechen
+                        if (CREDENTIAL_ERROR_CODES.includes(code)) {
+                            this.log.error('Login failed: Invalid email or password');
+                            return false;
+                        }
+                        // Bei Cross-Region-Error: nächsten Endpoint probieren
+                        if (CROSS_REGION_ERROR_CODES.includes(code)) {
+                            this.debugMode.debug('[LOGIN]', 'Cross-region error, trying alternate endpoint...');
+                            continue;
+                        }
+                        // Anderer Fehler in Step 1 -> Legacy-Flow probieren
+                        this.debugMode.debug('[LOGIN]', 'Step 1 failed, trying legacy login...');
+                        return await this.loginLegacy(pwdHashed, baseUrl);
                     }
+                    const { authorizeCode, bizToken } = step1Response.data.result || {};
+                    if (!authorizeCode) {
+                        this.debugMode.debug('[LOGIN]', 'No authorizeCode in Step 1 response');
+                        continue;
+                    }
+                    this.debugMode.debug('[LOGIN]', 'Step 1 success, got authorizeCode');
+                    // === STEP 2: Login with Authorization Code ===
+                    const step2Body = {
+                        method: 'loginByAuthorizeCode4Vesync',
+                        authorizeCode: authorizeCode,
+                        acceptLanguage: this.LANG,
+                        clientInfo: this.CLIENT_INFO,
+                        clientType: 'vesyncApp',
+                        clientVersion: this.CLIENT_VERSION,
+                        debugMode: false,
+                        emailSubscriptions: false,
+                        osInfo: this.OS,
+                        terminalId: terminalId,
+                        timeZone: this.TIMEZONE,
+                        userCountryCode: this.COUNTRY_CODE,
+                        traceId: `APP${appId}${Math.floor(Date.now() / 1000)}`
+                    };
+                    if (bizToken) {
+                        step2Body.bizToken = bizToken;
+                    }
+                    this.debugMode.debug('[LOGIN]', 'Step 2: Logging in with authorizeCode...');
+                    const step2Response = await axios_1.default.post(`${baseUrl}/user/api/accountManage/v1/loginByAuthorizeCode4Vesync`, step2Body, { headers: authHeaders, timeout: 15000 });
+                    if (!(step2Response === null || step2Response === void 0 ? void 0 : step2Response.data) || step2Response.data.code !== 0) {
+                        const code = (_c = step2Response === null || step2Response === void 0 ? void 0 : step2Response.data) === null || _c === void 0 ? void 0 : _c.code;
+                        const msg = (_d = step2Response === null || step2Response === void 0 ? void 0 : step2Response.data) === null || _d === void 0 ? void 0 : _d.msg;
+                        this.debugMode.debug('[LOGIN]', `Step 2 failed: ${msg} (${code})`);
+                        if (CROSS_REGION_ERROR_CODES.includes(code)) {
+                            this.debugMode.debug('[LOGIN]', 'Cross-region error in Step 2, trying alternate...');
+                            continue;
+                        }
+                        continue;
+                    }
+                    const { token, accountID } = step2Response.data.result || {};
+                    if (!token || !accountID) {
+                        this.debugMode.debug('[LOGIN]', 'Missing token/accountID in Step 2 response');
+                        continue;
+                    }
+                    // Erfolg!
+                    this.debugMode.debug('[LOGIN]', 'Authentication successful!');
+                    this.baseURL = baseUrl;
+                    this.token = token;
+                    this.accountId = accountID;
+                    this.api = axios_1.default.create({
+                        ...this.AXIOS_OPTIONS,
+                        headers: {
+                            'content-type': 'application/json',
+                            'accept-language': this.LANG,
+                            accountid: this.accountId,
+                            'user-agent': this.AGENT,
+                            appversion: this.APP_VERSION,
+                            tz: this.TIMEZONE,
+                            tk: this.token
+                        }
+                    });
+                    await delay(500);
+                    return true;
                 }
-                if (((_a = response === null || response === void 0 ? void 0 : response.data) === null || _a === void 0 ? void 0 : _a.code) !== 0 && ((_b = response === null || response === void 0 ? void 0 : response.data) === null || _b === void 0 ? void 0 : _b.code) !== undefined) {
-                    this.debugMode.debug('[LOGIN]', 'The authentication failed!! JSON:', JSON.stringify(response.data));
-                    this.log.error(`Login failed: ${response.data.msg || 'Unknown error'} (Code: ${response.data.code})`);
-                    return false;
+                catch (error) {
+                    this.debugMode.debug('[LOGIN]', `Request error: ${error === null || error === void 0 ? void 0 : error.message}`);
+                    continue;
                 }
             }
-            const { result } = response.data;
-            const { token, accountID } = result !== null && result !== void 0 ? result : {};
-            if (!token || !accountID) {
-                this.debugMode.debug('[LOGIN]', 'The authentication failed!! JSON:', JSON.stringify(response.data));
-                this.log.error('Login failed: Missing token or accountID');
+            // Alle Endpoints fehlgeschlagen
+            this.log.error('Login failed: Could not authenticate with any endpoint');
+            return false;
+        }
+        catch (error) {
+            const errorMessage = ((_e = error === null || error === void 0 ? void 0 : error.response) === null || _e === void 0 ? void 0 : _e.data)
+                ? JSON.stringify(error.response.data)
+                : (error === null || error === void 0 ? void 0 : error.message) || 'Unknown error';
+            this.log.error('Login failed', errorMessage);
+            this.debugMode.debug('[LOGIN]', 'Error:', errorMessage);
+            return false;
+        }
+    }
+    /**
+     * Legacy Login als Fallback (wie vorher)
+     */
+    async loginLegacy(pwdHashed, baseUrl) {
+        this.debugMode.debug('[LOGIN LEGACY]', 'Trying legacy login...');
+        try {
+            const response = await axios_1.default.post(`${baseUrl}/cloud/v1/user/login`, {
+                email: this.email,
+                password: pwdHashed,
+                devToken: '',
+                userType: 1,
+                method: 'login',
+                token: '',
+                ...this.generateDetailBody(),
+                ...this.generateBody()
+            }, {
+                headers: {
+                    'content-type': 'application/json',
+                    'accept-language': this.LANG,
+                    'user-agent': this.AGENT,
+                    appversion: this.APP_VERSION,
+                    tz: this.TIMEZONE,
+                },
+                timeout: 15000
+            });
+            if (!(response === null || response === void 0 ? void 0 : response.data) || (response.data.code !== 0 && response.data.code !== undefined)) {
+                this.debugMode.debug('[LOGIN LEGACY]', 'Failed:', JSON.stringify(response === null || response === void 0 ? void 0 : response.data));
                 return false;
             }
-            this.debugMode.debug('[LOGIN]', 'The authentication success');
-            this.accountId = accountID;
+            const { token, accountID } = response.data.result || {};
+            if (!token || !accountID) {
+                this.debugMode.debug('[LOGIN LEGACY]', 'Missing token/accountID');
+                return false;
+            }
+            this.debugMode.debug('[LOGIN LEGACY]', 'Success!');
+            this.baseURL = baseUrl;
             this.token = token;
+            this.accountId = accountID;
             this.api = axios_1.default.create({
                 ...this.AXIOS_OPTIONS,
                 headers: {
@@ -406,17 +489,13 @@ class VeSync {
             return true;
         }
         catch (error) {
-            const errorMessage = ((_c = error === null || error === void 0 ? void 0 : error.response) === null || _c === void 0 ? void 0 : _c.data)
-                ? JSON.stringify(error.response.data)
-                : (error === null || error === void 0 ? void 0 : error.message) || 'Unknown error';
-            this.log.error('Failed to login', `Error: ${errorMessage}`);
-            this.debugMode.debug('[LOGIN]', 'Login error details:', errorMessage);
+            this.debugMode.debug('[LOGIN LEGACY]', 'Error:', error === null || error === void 0 ? void 0 : error.message);
             return false;
         }
     }
     async getDevices() {
         return lock.acquire('api-call', async () => {
-            var _a, _b, _c, _d, _e;
+            var _a, _b, _c;
             try {
                 if (!this.api) {
                     throw new Error('The user is not logged in!');
@@ -428,42 +507,25 @@ class VeSync {
                         pageSize: 1000,
                         ...this.generateDetailBody(),
                         ...this.generateBody(true)
-                    }), 3, // maxRetries
-                    1000 // baseDelay
-                    );
+                    }), 3, 1000);
                     if (!(response === null || response === void 0 ? void 0 : response.data)) {
-                        this.debugMode.debug('[GET DEVICES]', 'No response data!! JSON:', JSON.stringify(response));
-                        return {
-                            purifiers: [],
-                            humidifiers: []
-                        };
+                        return { purifiers: [], humidifiers: [] };
                     }
-                    // Prüfe auf API-Fehler
                     if (response.data.code !== 0 && response.data.code !== undefined) {
-                        const errorMsg = response.data.msg || 'Unknown error';
                         const errorCode = response.data.code;
-                        this.debugMode.debug('[GET DEVICES]', `API error: ${errorMsg} (Code: ${errorCode})`, JSON.stringify(response.data));
                         if (isTokenInvalidCode(errorCode) && attempt === 0) {
-                            this.debugMode.debug('[GET DEVICES]', 'Token expired, attempting re-login...');
+                            this.debugMode.debug('[GET DEVICES]', 'Token expired, re-login...');
                             const loginSuccess = await this.loginInternal();
-                            if (loginSuccess) {
+                            if (loginSuccess)
                                 continue;
-                            }
                         }
-                        return {
-                            purifiers: [],
-                            humidifiers: []
-                        };
+                        return { purifiers: [], humidifiers: [] };
                     }
                     if (!Array.isArray((_b = (_a = response.data) === null || _a === void 0 ? void 0 : _a.result) === null || _b === void 0 ? void 0 : _b.list)) {
-                        this.debugMode.debug('[GET DEVICES]', 'No list found!! JSON:', JSON.stringify(response.data));
-                        return {
-                            purifiers: [],
-                            humidifiers: []
-                        };
+                        return { purifiers: [], humidifiers: [] };
                     }
                     const { list } = (_c = response.data.result) !== null && _c !== void 0 ? _c : { list: [] };
-                    this.debugMode.debug('[GET DEVICES]', 'Device List -> JSON:', JSON.stringify(list));
+                    this.debugMode.debug('[GET DEVICES]', 'Device List:', JSON.stringify(list));
                     let purifiers = list
                         .filter(({ deviceType, type, extension }) => !!deviceTypes_1.default.find(({ isValid }) => isValid(deviceType)) &&
                         type === 'wifi-air' &&
@@ -474,7 +536,14 @@ class VeSync {
                         .filter(({ deviceType, type, deviceProp }) => !!deviceTypes_1.default.find(({ isValid }) => isValid(deviceType)) &&
                         type === 'wifi-air' &&
                         !!deviceProp)
-                        .map((fan) => ({ ...fan, extension: { ...fan.deviceProp, airQualityLevel: fan.deviceProp.AQLevel, mode: fan.deviceProp.workMode } }))
+                        .map((fan) => ({
+                        ...fan,
+                        extension: {
+                            ...fan.deviceProp,
+                            airQualityLevel: fan.deviceProp.AQLevel,
+                            mode: fan.deviceProp.workMode
+                        }
+                    }))
                         .map(VeSyncFan_1.default.fromResponse(this)));
                     const humidifiers = list
                         .filter(({ deviceType, type, extension }) => !!deviceTypes_1.humidifierDeviceTypes.find(({ isValid }) => isValid(deviceType)) &&
@@ -482,33 +551,14 @@ class VeSync {
                         !extension)
                         .map(VeSyncHumidifier_1.default.fromResponse(this));
                     await delay(1500);
-                    return {
-                        purifiers,
-                        humidifiers
-                    };
+                    return { purifiers, humidifiers };
                 }
-                return {
-                    purifiers: [],
-                    humidifiers: []
-                };
+                return { purifiers: [], humidifiers: [] };
             }
             catch (error) {
-                const statusCode = (_d = error === null || error === void 0 ? void 0 : error.response) === null || _d === void 0 ? void 0 : _d.status;
-                const errorMessage = ((_e = error === null || error === void 0 ? void 0 : error.response) === null || _e === void 0 ? void 0 : _e.data)
-                    ? JSON.stringify(error.response.data)
-                    : (error === null || error === void 0 ? void 0 : error.message) || 'Unknown error';
-                // Rate Limiting Fehler separat behandeln
-                if (statusCode === 429) {
-                    this.log.warn('Rate limit erreicht beim Abrufen der Geräteliste. Bitte warten...');
-                }
-                else {
-                    this.log.error('Failed to get devices', `Error: ${errorMessage}`);
-                }
-                this.debugMode.debug('[GET DEVICES]', 'Error details:', errorMessage);
-                return {
-                    purifiers: [],
-                    humidifiers: []
-                };
+                const errorMessage = (error === null || error === void 0 ? void 0 : error.message) || 'Unknown error';
+                this.log.error('Failed to get devices', errorMessage);
+                return { purifiers: [], humidifiers: [] };
             }
         });
     }
