@@ -2,14 +2,14 @@
 
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-Ein Homebridge-Plugin zur Steuerung von Levoit-Luftreinigern über die VeSync-Plattform.
+A Homebridge plugin to control Levoit Air Purifiers via the VeSync platform.
 
-> **Hinweis:** Dies ist ein Fork von [homebridge-levoit-air-purifier](https://github.com/RaresAil/homebridge-levoit-air-purifier) von RaresAil mit Verbesserungen für den aktuellen VeSync-Auth-Flow und EU-Unterstützung.
+> **Note:** This is a fork of [homebridge-levoit-air-purifier](https://github.com/RaresAil/homebridge-levoit-air-purifier) by RaresAil with improvements for the current VeSync auth flow and EU support.
 
-## Unterstützte Geräte
+## Supported Devices
 
-| Modell | Getestet | Geschwindigkeitsstufen |
-|--------|----------|------------------------|
+| Model | Tested | Speed Levels |
+|-------|--------|--------------|
 | Core 600S | ✅ (Original) | Sleep, 1-4 |
 | Core 400S Pro | ✅ (Original) | Sleep, 1-4 |
 | Core 400S | ✅ (Original) | Sleep, 1-4 |
@@ -17,51 +17,51 @@ Ein Homebridge-Plugin zur Steuerung von Levoit-Luftreinigern über die VeSync-Pl
 | Core 200S | ✅ (Original) | Sleep, 1-3 |
 | Vital 100S / 200S | ✅ (Original) | Sleep, 1-3 |
 
-**Hinweis:** Geräte unter 200 (z.B. 131S) werden nicht unterstützt, da diese API v1 benötigen.
+**Note:** Devices below 200 (e.g. 131S) are not supported as they require API v1.
 
 ## Features
 
-- ✅ Luftqualitätsanzeige (PM2.5 als separater Sensor)
-- ✅ Filterlebensdauer & Filterwechsel-Indikator
-- ✅ Kindersicherung (Child Lock)
-- ✅ Modi: Auto, Manuell, Nachtmodus
-- ✅ Geschwindigkeitssteuerung
-- ✅ EU & US Endpoint-Unterstützung
-- ✅ Token Persistence (Session wird gespeichert)
+- ✅ Air quality display (PM2.5 as separate sensor)
+- ✅ Filter life level & filter change indicator
+- ✅ Child lock
+- ✅ Modes: Auto, Manual, Sleep
+- ✅ Speed control
+- ✅ EU & US endpoint support
+- ✅ Token persistence (session is saved)
 
-### Experimentelle Features
+### Experimental Features
 
-- **DeviceDisplay**: Display-Steuerung als Lampe in HomeKit
-- **Humidifiers**: Unterstützung für Levoit-Luftbefeuchter (Dual 200S)
+- **DeviceDisplay**: Display control as light in HomeKit
+- **Humidifiers**: Support for Levoit humidifiers (Dual 200S)
 
 ## Installation
 
-### Auf dem offiziellen Homebridge Image (Raspberry Pi)
+### On the Official Homebridge Image (Raspberry Pi)
 
-Öffne das **Terminal** in der Homebridge UI und führe folgenden Befehl aus:
+Open the **Terminal** in the Homebridge UI and run:
 
 ```bash
 npm --prefix /var/lib/homebridge install --save git+https://github.com/Karrypto/homebridge-levoit-air-purifier.git#master
 ```
 
-Danach **Homebridge neu starten**.
+Then **restart Homebridge**.
 
-### Andere Installationen
+### Other Installations
 
 ```bash
 npm install -g git+https://github.com/Karrypto/homebridge-levoit-air-purifier.git
 ```
 
-## Konfiguration
+## Configuration
 
-### Über die Homebridge UI
+### Via Homebridge UI
 
-1. Gehe zu **Plugins** → **Levoit Air Purifiers** → **Settings**
-2. Gib deine VeSync-Zugangsdaten ein
-3. Wähle deinen **Country Code** (z.B. `DE` für Deutschland)
-4. Speichern und Homebridge neu starten
+1. Go to **Plugins** → **Levoit Air Purifiers** → **Settings**
+2. Enter your VeSync credentials
+3. Select your **Country Code** (e.g. `DE` for Germany, `US` for USA)
+4. Save and restart Homebridge
 
-### Manuelle Konfiguration (config.json)
+### Manual Configuration (config.json)
 
 ```json
 {
@@ -69,23 +69,23 @@ npm install -g git+https://github.com/Karrypto/homebridge-levoit-air-purifier.gi
     {
       "platform": "LevoitAirPurifiers",
       "name": "Levoit Air Purifiers",
-      "email": "deine@email.de",
-      "password": "dein-passwort",
-      "countryCode": "DE"
+      "email": "your@email.com",
+      "password": "your-password",
+      "countryCode": "US"
     }
   ]
 }
 ```
 
-### Optionale Einstellungen
+### Optional Settings
 
 ```json
 {
   "platform": "LevoitAirPurifiers",
   "name": "Levoit Air Purifiers",
-  "email": "deine@email.de",
-  "password": "dein-passwort",
-  "countryCode": "DE",
+  "email": "your@email.com",
+  "password": "your-password",
+  "countryCode": "US",
   "enableDebugMode": false,
   "experimentalFeatures": ["DeviceDisplay", "Humidifiers"]
 }
@@ -93,91 +93,91 @@ npm install -g git+https://github.com/Karrypto/homebridge-levoit-air-purifier.gi
 
 ## Country Codes
 
-| Land | Code | Endpoint |
-|------|------|----------|
-| 🇩🇪 Deutschland | `DE` | EU |
-| 🇦🇹 Österreich | `AT` | EU |
-| 🇨🇭 Schweiz | `CH` | EU |
-| 🇬🇧 Großbritannien | `GB` | EU |
-| 🇫🇷 Frankreich | `FR` | EU |
-| 🇳🇱 Niederlande | `NL` | EU |
+| Country | Code | Endpoint |
+|---------|------|----------|
+| 🇩🇪 Germany | `DE` | EU |
+| 🇦🇹 Austria | `AT` | EU |
+| 🇨🇭 Switzerland | `CH` | EU |
+| 🇬🇧 United Kingdom | `GB` | EU |
+| 🇫🇷 France | `FR` | EU |
+| 🇳🇱 Netherlands | `NL` | EU |
 | 🇺🇸 USA | `US` | US |
-| 🇨🇦 Kanada | `CA` | US |
-| 🇦🇺 Australien | `AU` | US |
+| 🇨🇦 Canada | `CA` | US |
+| 🇦🇺 Australia | `AU` | US |
 
-EU-Accounts werden automatisch über `smartapi.vesync.eu` geroutet.
+EU accounts are automatically routed via `smartapi.vesync.eu`.
 
-## Steuerung in HomeKit
+## HomeKit Control
 
-### Geschwindigkeit (Rotation Speed)
+### Speed (Rotation Speed)
 
 **Core 200S / 300S / 300S Pro:**
 
-| HomeKit | Modus |
-|---------|-------|
-| 0% | Aus |
-| 25% | Nachtmodus (Sleep) |
-| 50% | Stufe 1 |
-| 75% | Stufe 2 |
-| 100% | Stufe 3 |
+| HomeKit | Mode |
+|---------|------|
+| 0% | Off |
+| 25% | Sleep Mode |
+| 50% | Level 1 |
+| 75% | Level 2 |
+| 100% | Level 3 |
 
 **Core 400S / 400S Pro / 600S:**
 
-| HomeKit | Modus |
-|---------|-------|
-| 0% | Aus |
-| 20% | Nachtmodus (Sleep) |
-| 40% | Stufe 1 |
-| 60% | Stufe 2 |
-| 80% | Stufe 3 |
-| 100% | Stufe 4 |
+| HomeKit | Mode |
+|---------|------|
+| 0% | Off |
+| 20% | Sleep Mode |
+| 40% | Level 1 |
+| 60% | Level 2 |
+| 80% | Level 3 |
+| 100% | Level 4 |
 
-### Zielzustand (Target State)
+### Target State
 
-| HomeKit | Levoit Modus |
-|---------|--------------|
-| Auto | Automatik-Modus |
-| Manual | Manueller Modus |
+| HomeKit | Levoit Mode |
+|---------|-------------|
+| Auto | Automatic mode |
+| Manual | Manual mode |
 
 ## Troubleshooting
 
 ### "Login failed: Invalid email or password"
-- Prüfe deine VeSync-Zugangsdaten in der VeSync-App
+- Verify your VeSync credentials in the VeSync app
 
 ### "Cross-region error"
-- Wähle den korrekten **Country Code** für dein Land
+- Select the correct **Country Code** for your region
 
-### Gerät erscheint nicht in HomeKit
-- Aktiviere **Debug Mode** in den Plugin-Einstellungen
-- Prüfe ob das Gerät in der VeSync-App online ist
+### Device not appearing in HomeKit
+- Enable **Debug Mode** in plugin settings
+- Check if the device is online in the VeSync app
 
 ### Token Persistence
-Das Plugin speichert die VeSync-Session. Nach einem Neustart siehst du:
+The plugin saves your VeSync session. After a restart you'll see:
 ```
 Reusing persisted VeSync session
 ```
 
-## Deinstallation
+## Uninstall
 
 ```bash
 npm --prefix /var/lib/homebridge uninstall homebridge-levoit-air-purifier
 ```
 
-## Änderungen gegenüber dem Original
+## Changes from Original
 
-Dieser Fork enthält folgende Verbesserungen:
+This fork includes the following improvements:
 
-- **Neuer 2-Schritt-Auth-Flow** (kompatibel mit aktuellen VeSync-Accounts)
-- **EU-Endpoint-Unterstützung** (automatisch basierend auf Country Code)
-- **Token Persistence** (Session wird zwischen Neustarts gespeichert)
-- **Verbesserte Fehlerbehandlung**
+- **New 2-step auth flow** (compatible with current VeSync accounts)
+- **EU endpoint support** (automatic based on country code)
+- **Token persistence** (session saved between restarts)
+- **Improved error handling**
 
-## Credits & Lizenz
+## Credits & License
 
-**Original-Plugin:** [homebridge-levoit-air-purifier](https://github.com/RaresAil/homebridge-levoit-air-purifier) von [RaresAil](https://github.com/RaresAil)
+**Original Plugin:** [homebridge-levoit-air-purifier](https://github.com/RaresAil/homebridge-levoit-air-purifier) by [RaresAil](https://github.com/RaresAil)
 
-**Auth-Flow inspiriert von:** [homebridge-tsvesync](https://github.com/mickgiles/homebridge-tsvesync)
+**Auth flow inspired by:** [homebridge-tsvesync](https://github.com/mickgiles/homebridge-tsvesync)
 
-**Lizenz:** [Apache-2.0](LICENSE)
+**License:** [Apache-2.0](LICENSE)
 
-Dieses Projekt ist ein Fork und steht unter der gleichen Lizenz wie das Original.
+This project is a fork and is released under the same license as the original.
