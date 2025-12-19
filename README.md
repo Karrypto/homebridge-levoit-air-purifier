@@ -65,6 +65,17 @@ npm --prefix /var/lib/homebridge install --save git+https://github.com/Karrypto/
 
 ## Configuration
 
+### Recommended: Enable Child Bridge
+
+For better stability and performance, enable **Child Bridge** mode:
+
+1. Go to **Plugins** → **Levoit Air Purifier EU**
+2. Click the **wrench icon** (⚙️) → **Bridge Settings**
+3. Enable **"Run as a separate child bridge"**
+4. Save and restart Homebridge
+
+This isolates the plugin in its own process - if it crashes, your other plugins keep running.
+
 ### Via Homebridge UI
 
 1. Go to **Plugins** → **Levoit Air Purifier EU** → **Settings**
