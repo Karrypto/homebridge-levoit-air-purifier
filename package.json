@@ -7,10 +7,10 @@
   "version": "1.0.0",
   "private": false,
   "bugs": {
-    "url": "https://github.com/Karrypto/homebridge-levoit-air-purifier/issues"
+    "url": "https://github.com/Karrypto/homebridge-levoit-air-purifier-eu/issues"
   },
   "repository": {
-    "url": "git://github.com/Karrypto/homebridge-levoit-air-purifier.git",
+    "url": "git://github.com/Karrypto/homebridge-levoit-air-purifier-eu.git",
     "type": "git"
   },
   "scripts": {

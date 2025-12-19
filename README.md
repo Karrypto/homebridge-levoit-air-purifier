@@ -60,7 +60,7 @@ Then **restart Homebridge**.
 ### Install from GitHub (Development)
 
 ```bash
-npm --prefix /var/lib/homebridge install --save git+https://github.com/Karrypto/homebridge-levoit-air-purifier.git#master
+npm --prefix /var/lib/homebridge install --save git+https://github.com/Karrypto/homebridge-levoit-air-purifier-eu.git#master
 ```
 
 ## Configuration
