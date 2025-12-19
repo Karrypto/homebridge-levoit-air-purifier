@@ -1,8 +1,9 @@
-# Homebridge Levoit Air Purifier (Fork)
+# Homebridge Levoit Air Purifier EU
 
+[![npm](https://img.shields.io/npm/v/homebridge-levoit-air-purifier-eu.svg)](https://www.npmjs.com/package/homebridge-levoit-air-purifier-eu)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-A Homebridge plugin to control Levoit Air Purifiers via the VeSync platform.
+A Homebridge plugin to control Levoit Air Purifiers via the VeSync platform with **EU endpoint support**.
 
 > **Note:** This is a fork of [homebridge-levoit-air-purifier](https://github.com/RaresAil/homebridge-levoit-air-purifier) by RaresAil with improvements for the current VeSync auth flow and EU support.
 
@@ -36,27 +37,37 @@ A Homebridge plugin to control Levoit Air Purifiers via the VeSync platform.
 
 ## Installation
 
+### Via Homebridge UI (Recommended)
+
+Search for **"levoit air purifier eu"** in the Homebridge Plugin search.
+
+### Via npm
+
+```bash
+npm install -g homebridge-levoit-air-purifier-eu
+```
+
 ### On the Official Homebridge Image (Raspberry Pi)
 
 Open the **Terminal** in the Homebridge UI and run:
 
 ```bash
-npm --prefix /var/lib/homebridge install --save git+https://github.com/Karrypto/homebridge-levoit-air-purifier.git#master
+npm --prefix /var/lib/homebridge install --save homebridge-levoit-air-purifier-eu
 ```
 
 Then **restart Homebridge**.
 
-### Other Installations
+### Install from GitHub (Development)
 
 ```bash
-npm install -g git+https://github.com/Karrypto/homebridge-levoit-air-purifier.git
+npm --prefix /var/lib/homebridge install --save git+https://github.com/Karrypto/homebridge-levoit-air-purifier.git#master
 ```
 
 ## Configuration
 
 ### Via Homebridge UI
 
-1. Go to **Plugins** → **Levoit Air Purifiers** → **Settings**
+1. Go to **Plugins** → **Levoit Air Purifier EU** → **Settings**
 2. Enter your VeSync credentials
 3. Select your **Country Code** (e.g. `DE` for Germany, `US` for USA)
 4. Save and restart Homebridge
@@ -71,7 +82,7 @@ npm install -g git+https://github.com/Karrypto/homebridge-levoit-air-purifier.gi
       "name": "Levoit Air Purifiers",
       "email": "your@email.com",
       "password": "your-password",
-      "countryCode": "US"
+      "countryCode": "DE"
     }
   ]
 }
@@ -85,7 +96,7 @@ npm install -g git+https://github.com/Karrypto/homebridge-levoit-air-purifier.gi
   "name": "Levoit Air Purifiers",
   "email": "your@email.com",
   "password": "your-password",
-  "countryCode": "US",
+  "countryCode": "DE",
   "enableDebugMode": false,
   "experimentalFeatures": ["DeviceDisplay", "Humidifiers"]
 }
@@ -160,7 +171,7 @@ Reusing persisted VeSync session
 ## Uninstall
 
 ```bash
-npm --prefix /var/lib/homebridge uninstall homebridge-levoit-air-purifier
+npm --prefix /var/lib/homebridge uninstall homebridge-levoit-air-purifier-eu
 ```
 
 ## Changes from Original
