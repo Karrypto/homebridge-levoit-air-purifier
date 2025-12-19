@@ -218,16 +218,16 @@ export default class VeSyncFan implements VeSyncGeneric {
 
         const result = data?.result?.result;
 
-        this._pm25 = this.deviceType.hasPM25 ? result.air_quality_value || result.PM25 : 0;
+        this._pm25 = this.deviceType.hasPM25 ? (result.air_quality_value ?? result.PM25 ?? 0) : 0;
         this._airQualityLevel = this.deviceType.hasAirQuality
-          ? result.air_quality || result.AQLevel
+          ? (result.air_quality ?? result.AQLevel ?? AirQuality.UNKNOWN)
           : AirQuality.UNKNOWN;
-        this._filterLife = result.filter_life || result.filterLifePercent;
-        this._screenVisible = result.display || result.screenSwitch;
-        this._childLock = result.child_lock || result.childLockSwitch;
-        this._isOn = result.enabled || result.powerSwitch;
-        this._speed = result.level || result.fanSpeedLevel;
-        this._mode = result.mode || result.workMode;
+        this._filterLife = result.filter_life ?? result.filterLifePercent ?? 0;
+        this._screenVisible = result.display ?? result.screenSwitch ?? false;
+        this._childLock = result.child_lock ?? result.childLockSwitch ?? false;
+        this._isOn = result.enabled ?? result.powerSwitch ?? false;
+        this._speed = result.level ?? result.fanSpeedLevel ?? 1;
+        this._mode = result.mode ?? result.workMode ?? Mode.Manual;
       } catch (err: any) {
         const errorMessage = err?.response?.data 
           ? JSON.stringify(err.response.data)

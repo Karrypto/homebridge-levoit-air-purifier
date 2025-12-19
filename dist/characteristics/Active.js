@@ -4,7 +4,8 @@ const util_1 = require("../util");
 const characteristic = {
     get: async function () {
         await this.device.updateInfo();
-        return this.device.isOn;
+        // Always return 0 or 1, never undefined
+        return this.device.isOn ? 1 : 0;
     },
     set: async function (value) {
         let boolValue = value === 1;

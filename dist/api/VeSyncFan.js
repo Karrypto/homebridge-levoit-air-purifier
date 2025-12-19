@@ -169,7 +169,7 @@ class VeSyncFan {
     }
     async updateInfo() {
         return this.lock.acquire('update-info', async () => {
-            var _a, _b, _c;
+            var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u;
             try {
                 if (Date.now() - this.lastCheck < 5 * 1000) {
                     return;
@@ -180,19 +180,19 @@ class VeSyncFan {
                     return;
                 }
                 const result = (_b = data === null || data === void 0 ? void 0 : data.result) === null || _b === void 0 ? void 0 : _b.result;
-                this._pm25 = this.deviceType.hasPM25 ? result.air_quality_value || result.PM25 : 0;
+                this._pm25 = this.deviceType.hasPM25 ? ((_d = (_c = result.air_quality_value) !== null && _c !== void 0 ? _c : result.PM25) !== null && _d !== void 0 ? _d : 0) : 0;
                 this._airQualityLevel = this.deviceType.hasAirQuality
-                    ? result.air_quality || result.AQLevel
+                    ? ((_f = (_e = result.air_quality) !== null && _e !== void 0 ? _e : result.AQLevel) !== null && _f !== void 0 ? _f : AirQuality.UNKNOWN)
                     : AirQuality.UNKNOWN;
-                this._filterLife = result.filter_life || result.filterLifePercent;
-                this._screenVisible = result.display || result.screenSwitch;
-                this._childLock = result.child_lock || result.childLockSwitch;
-                this._isOn = result.enabled || result.powerSwitch;
-                this._speed = result.level || result.fanSpeedLevel;
-                this._mode = result.mode || result.workMode;
+                this._filterLife = (_h = (_g = result.filter_life) !== null && _g !== void 0 ? _g : result.filterLifePercent) !== null && _h !== void 0 ? _h : 0;
+                this._screenVisible = (_k = (_j = result.display) !== null && _j !== void 0 ? _j : result.screenSwitch) !== null && _k !== void 0 ? _k : false;
+                this._childLock = (_m = (_l = result.child_lock) !== null && _l !== void 0 ? _l : result.childLockSwitch) !== null && _m !== void 0 ? _m : false;
+                this._isOn = (_p = (_o = result.enabled) !== null && _o !== void 0 ? _o : result.powerSwitch) !== null && _p !== void 0 ? _p : false;
+                this._speed = (_r = (_q = result.level) !== null && _q !== void 0 ? _q : result.fanSpeedLevel) !== null && _r !== void 0 ? _r : 1;
+                this._mode = (_t = (_s = result.mode) !== null && _s !== void 0 ? _s : result.workMode) !== null && _t !== void 0 ? _t : Mode.Manual;
             }
             catch (err) {
-                const errorMessage = ((_c = err === null || err === void 0 ? void 0 : err.response) === null || _c === void 0 ? void 0 : _c.data)
+                const errorMessage = ((_u = err === null || err === void 0 ? void 0 : err.response) === null || _u === void 0 ? void 0 : _u.data)
                     ? JSON.stringify(err.response.data)
                     : (err === null || err === void 0 ? void 0 : err.message) || 'Unknown error';
                 this.client.log.error(`Failed to update info for ${this.name}: ${errorMessage}`);
