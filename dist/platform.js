@@ -28,7 +28,7 @@ class Platform {
         this.registeredDevices = [];
         this.cachedAccessories = [];
         this.cachedAdditional = [];
-        const { email, password, enableDebugMode, vesyncAppVersion, vesyncDeviceId, countryCode } = (_a = this.config) !== null && _a !== void 0 ? _a : {};
+        const { email, password, enableDebugMode, countryCode } = (_a = this.config) !== null && _a !== void 0 ? _a : {};
         this.debugger = new debugMode_1.default(!!enableDebugMode, this.log);
         try {
             if (!email || !password) {
@@ -38,9 +38,8 @@ class Platform {
             }
             this.debugger.debug('[PLATFORM]', 'Debug mode enabled');
             this.client = new VeSync_1.default(email, password, this.debugger, log, {
-                appVersion: vesyncAppVersion,
-                deviceId: vesyncDeviceId,
                 countryCode,
+                storagePath: this.api.user.storagePath(),
             });
             this.api.on('didFinishLaunching', () => {
                 this.discoverDevices();

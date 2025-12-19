@@ -15,30 +15,44 @@
         "title": "Email",
         "type": "string",
         "required": true,
-        "description": "VeSync's account email."
+        "description": "Your VeSync account email."
       },
       "password": {
         "title": "Password",
         "type": "string",
         "required": true,
-        "description": "VeSync's account password"
+        "description": "Your VeSync account password."
       },
       "countryCode": {
         "title": "Country Code",
         "type": "string",
-        "default": "US",
-        "description": "Wichtig für internationale Accounts. EU-Accounts nutzen typischerweise den EU-Endpoint. Beispiel: DE"
-      },
-      "vesyncAppVersion": {
-        "title": "VeSync App Version (Advanced)",
-        "type": "string",
-        "default": "5.7.60",
-        "description": "Override der VeSync App-Version. Falls Login fehlschlägt mit 'app version is too low', hier erhöhen (z.B. 5.8.0)."
-      },
-      "vesyncDeviceId": {
-        "title": "VeSync Device ID / devToken (Advanced)",
-        "type": "string",
-        "description": "Optional: feste Device-ID (devToken) für den Login. Standard ist eine stabile, aus der Email abgeleitete ID."
+        "default": "DE",
+        "oneOf": [
+          { "title": "🇩🇪 Germany (DE)", "enum": ["DE"] },
+          { "title": "🇺🇸 United States (US)", "enum": ["US"] },
+          { "title": "🇬🇧 United Kingdom (GB)", "enum": ["GB"] },
+          { "title": "🇫🇷 France (FR)", "enum": ["FR"] },
+          { "title": "🇮🇹 Italy (IT)", "enum": ["IT"] },
+          { "title": "🇪🇸 Spain (ES)", "enum": ["ES"] },
+          { "title": "🇳🇱 Netherlands (NL)", "enum": ["NL"] },
+          { "title": "🇦🇹 Austria (AT)", "enum": ["AT"] },
+          { "title": "🇨🇭 Switzerland (CH)", "enum": ["CH"] },
+          { "title": "🇵🇱 Poland (PL)", "enum": ["PL"] },
+          { "title": "🇸🇪 Sweden (SE)", "enum": ["SE"] },
+          { "title": "🇳🇴 Norway (NO)", "enum": ["NO"] },
+          { "title": "🇩🇰 Denmark (DK)", "enum": ["DK"] },
+          { "title": "🇫🇮 Finland (FI)", "enum": ["FI"] },
+          { "title": "🇧🇪 Belgium (BE)", "enum": ["BE"] },
+          { "title": "🇮🇪 Ireland (IE)", "enum": ["IE"] },
+          { "title": "🇵🇹 Portugal (PT)", "enum": ["PT"] },
+          { "title": "🇨🇦 Canada (CA)", "enum": ["CA"] },
+          { "title": "🇦🇺 Australia (AU)", "enum": ["AU"] },
+          { "title": "🇳🇿 New Zealand (NZ)", "enum": ["NZ"] },
+          { "title": "🇯🇵 Japan (JP)", "enum": ["JP"] },
+          { "title": "🇸🇬 Singapore (SG)", "enum": ["SG"] },
+          { "title": "🇲🇽 Mexico (MX)", "enum": ["MX"] }
+        ],
+        "description": "Select the country where your VeSync account was created. EU countries use the EU endpoint, others use the US endpoint."
       },
       "enableDebugMode": {
         "title": "Enable Debug Mode",
@@ -54,7 +68,8 @@
           "title": "Feature",
           "type": "string",
           "enum": ["DeviceDisplay", "Humidifiers"]
-        }
+        },
+        "description": "Optional: Enable display control or humidifier support."
       }
     }
   }

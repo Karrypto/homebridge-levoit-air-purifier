@@ -22,10 +22,8 @@ export declare enum HumidifierBypassMethod {
     LEVEL = "setLevel"
 }
 export interface VeSyncClientOptions {
-    appVersion?: string;
-    deviceId?: string;
     countryCode?: string;
-    baseURL?: string;
+    storagePath?: string;
 }
 export default class VeSync {
     private readonly email;
@@ -36,6 +34,7 @@ export default class VeSync {
     private api?;
     private accountId?;
     private token?;
+    private tokenExpiresAt?;
     private loginInterval?;
     private readonly APP_VERSION;
     private readonly CLIENT_VERSION;
@@ -47,10 +46,14 @@ export default class VeSync {
     private readonly LANG;
     private readonly PHONE_BRAND;
     private readonly CLIENT_INFO;
+    private readonly sessionFilePath?;
     private get AXIOS_OPTIONS();
     constructor(email: string, password: string, debugMode: DebugMode, log: Logger, options?: VeSyncClientOptions);
     private isEuCountryCode;
     private getAlternateBaseURL;
+    private loadPersistedSession;
+    private saveSession;
+    private clearPersistedSession;
     private generateDetailBody;
     private generateBody;
     private generateV2Body;
@@ -59,16 +62,7 @@ export default class VeSync {
     startSession(): Promise<boolean>;
     stopSession(): void;
     private login;
-    /**
-     * Neuer 2-Schritt-Auth-Flow (wie tsvesync)
-     * Step 1: authByPWDOrOTM -> authorizeCode
-     * Step 2: loginByAuthorizeCode4Vesync -> token, accountID
-     * Fallback: Legacy Login (/cloud/v1/user/login)
-     */
     private loginInternal;
-    /**
-     * Legacy Login als Fallback (wie vorher)
-     */
     private loginLegacy;
     getDevices(): Promise<{
         purifiers: VeSyncFan[];

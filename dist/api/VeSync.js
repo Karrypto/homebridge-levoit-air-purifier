@@ -30,6 +30,8 @@ exports.HumidifierBypassMethod = exports.BypassMethod = void 0;
 const axios_1 = __importDefault(require("axios"));
 const async_lock_1 = __importDefault(require("async-lock"));
 const crypto_1 = __importDefault(require("crypto"));
+const fs = __importStar(require("fs"));
+const path = __importStar(require("path"));
 const deviceTypes_1 = __importStar(require("./deviceTypes"));
 const VeSyncHumidifier_1 = __importDefault(require("./VeSyncHumidifier"));
 const VeSyncFan_1 = __importDefault(require("./VeSyncFan"));
@@ -55,7 +57,6 @@ var HumidifierBypassMethod;
 })(HumidifierBypassMethod || (exports.HumidifierBypassMethod = HumidifierBypassMethod = {}));
 const lock = new async_lock_1.default();
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-// Retry-Logik mit exponential backoff
 const retryWithBackoff = async (fn, maxRetries = 3, baseDelay = 1000, retryableErrors) => {
     var _a, _b, _c;
     let lastError;
@@ -86,10 +87,8 @@ const retryWithBackoff = async (fn, maxRetries = 3, baseDelay = 1000, retryableE
     throw lastError;
 };
 const isTokenInvalidCode = (code) => code === -11012001 || code === -11012002;
-// Cross-Region und Credential Error Codes (aus tsvesync)
 const CROSS_REGION_ERROR_CODES = [-11260022, -11261022];
 const CREDENTIAL_ERROR_CODES = [-11201129];
-// Helper: Generiere 8-stellige alphanumerische App-ID
 function generateAppId() {
     const chars = 'ABCDEFGHIJKLMNOPqRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
     let result = '';
@@ -98,7 +97,6 @@ function generateAppId() {
     }
     return result;
 }
-// Helper: Generiere 16-stellige Hex Terminal-ID
 function generateTerminalId() {
     const chars = 'abcdef0123456789';
     let result = '';
@@ -115,25 +113,28 @@ class VeSync {
         };
     }
     constructor(email, password, debugMode, log, options = {}) {
-        var _a, _b, _c;
+        var _a;
         this.email = email;
         this.password = password;
         this.debugMode = debugMode;
         this.log = log;
         this.options = options;
+        this.APP_VERSION = '5.7.16';
+        this.CLIENT_VERSION = `VeSync ${this.APP_VERSION}`;
         this.AGENT = 'okhttp/3.12.1';
         this.TIMEZONE = Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/New_York';
         this.OS = 'Android';
         this.LANG = 'en';
         this.PHONE_BRAND = 'SM N9005';
         this.CLIENT_INFO = 'SM N9005';
-        this.APP_VERSION = (_a = this.options.appVersion) !== null && _a !== void 0 ? _a : '5.7.16';
-        this.CLIENT_VERSION = `VeSync ${this.APP_VERSION}`;
-        this.COUNTRY_CODE = ((_b = this.options.countryCode) !== null && _b !== void 0 ? _b : 'US').toUpperCase();
-        // Endpoint-Handling: EU-Accounts laufen über smartapi.vesync.eu
-        this.baseURL = (_c = this.options.baseURL) !== null && _c !== void 0 ? _c : (this.isEuCountryCode(this.COUNTRY_CODE)
+        this.COUNTRY_CODE = ((_a = this.options.countryCode) !== null && _a !== void 0 ? _a : 'US').toUpperCase();
+        this.baseURL = this.isEuCountryCode(this.COUNTRY_CODE)
             ? 'https://smartapi.vesync.eu'
-            : 'https://smartapi.vesync.com');
+            : 'https://smartapi.vesync.com';
+        // Token Persistence: Speicherpfad für Session
+        if (this.options.storagePath) {
+            this.sessionFilePath = path.join(this.options.storagePath, '.vesync-session.json');
+        }
     }
     isEuCountryCode(countryCode) {
         const euLike = new Set([
@@ -146,6 +147,57 @@ class VeSync {
         return this.baseURL.includes('vesync.eu')
             ? 'https://smartapi.vesync.com'
             : 'https://smartapi.vesync.eu';
+    }
+    // === Token Persistence ===
+    loadPersistedSession() {
+        if (!this.sessionFilePath)
+            return null;
+        try {
+            if (fs.existsSync(this.sessionFilePath)) {
+                const data = fs.readFileSync(this.sessionFilePath, 'utf8');
+                const session = JSON.parse(data);
+                // Prüfe ob Token noch gültig (mit 5 Minuten Puffer)
+                if (session.expiresAt && Date.now() > (session.expiresAt - 5 * 60 * 1000)) {
+                    this.debugMode.debug('[SESSION]', 'Persisted session expired, will login fresh');
+                    return null;
+                }
+                this.debugMode.debug('[SESSION]', 'Loaded persisted session');
+                return session;
+            }
+        }
+        catch (error) {
+            this.debugMode.debug('[SESSION]', 'Failed to load persisted session:', error === null || error === void 0 ? void 0 : error.message);
+        }
+        return null;
+    }
+    saveSession() {
+        if (!this.sessionFilePath || !this.token || !this.accountId)
+            return;
+        try {
+            const session = {
+                token: this.token,
+                accountId: this.accountId,
+                baseURL: this.baseURL,
+                expiresAt: this.tokenExpiresAt
+            };
+            fs.writeFileSync(this.sessionFilePath, JSON.stringify(session), 'utf8');
+            this.debugMode.debug('[SESSION]', 'Session persisted');
+        }
+        catch (error) {
+            this.debugMode.debug('[SESSION]', 'Failed to persist session:', error === null || error === void 0 ? void 0 : error.message);
+        }
+    }
+    clearPersistedSession() {
+        if (!this.sessionFilePath)
+            return;
+        try {
+            if (fs.existsSync(this.sessionFilePath)) {
+                fs.unlinkSync(this.sessionFilePath);
+            }
+        }
+        catch (_a) {
+            // ignore
+        }
     }
     generateDetailBody() {
         return {
@@ -185,44 +237,39 @@ class VeSync {
     }
     async sendCommand(fan, method, body = {}) {
         return lock.acquire('api-call', async () => {
-            var _a, _b, _c, _d;
+            var _a, _b, _c;
             try {
                 if (!this.api) {
                     throw new Error('The user is not logged in!');
                 }
-                this.debugMode.debug('[SEND COMMAND]', `Sending command ${method} to ${fan.name}`, `with (${JSON.stringify(body)})...`);
+                this.debugMode.debug('[SEND COMMAND]', `${method} to ${fan.name}`);
                 for (let attempt = 0; attempt < 2; attempt++) {
                     const response = await retryWithBackoff(() => this.api.put('cloud/v2/deviceManaged/bypassV2', {
                         ...this.generateV2Body(fan, method, body),
                         ...this.generateDetailBody(),
                         ...this.generateBody(true)
                     }), 3, 1000);
-                    if (!(response === null || response === void 0 ? void 0 : response.data)) {
-                        this.debugMode.debug('[SEND COMMAND]', 'No response data!!');
+                    if (!(response === null || response === void 0 ? void 0 : response.data))
                         return false;
-                    }
-                    const isSuccess = ((_a = response === null || response === void 0 ? void 0 : response.data) === null || _a === void 0 ? void 0 : _a.code) === 0;
-                    if (isSuccess) {
+                    if (((_a = response === null || response === void 0 ? void 0 : response.data) === null || _a === void 0 ? void 0 : _a.code) === 0) {
                         await delay(500);
                         return true;
                     }
                     const errorCode = (_b = response === null || response === void 0 ? void 0 : response.data) === null || _b === void 0 ? void 0 : _b.code;
                     if (isTokenInvalidCode(errorCode) && attempt === 0) {
                         this.debugMode.debug('[SEND COMMAND]', 'Token expired, re-login...');
+                        this.clearPersistedSession();
                         const loginSuccess = await this.loginInternal();
                         if (loginSuccess)
                             continue;
                     }
-                    this.log.error(`Failed to send command ${method}: ${(_c = response === null || response === void 0 ? void 0 : response.data) === null || _c === void 0 ? void 0 : _c.msg} (${errorCode})`);
+                    this.log.error(`Command ${method} failed: ${(_c = response === null || response === void 0 ? void 0 : response.data) === null || _c === void 0 ? void 0 : _c.msg} (${errorCode})`);
                     return false;
                 }
                 return false;
             }
             catch (error) {
-                const errorMessage = ((_d = error === null || error === void 0 ? void 0 : error.response) === null || _d === void 0 ? void 0 : _d.data)
-                    ? JSON.stringify(error.response.data)
-                    : (error === null || error === void 0 ? void 0 : error.message) || 'Unknown error';
-                this.log.error(`Failed to send command ${method}`, errorMessage);
+                this.log.error(`Command ${method} error:`, error === null || error === void 0 ? void 0 : error.message);
                 return false;
             }
         });
@@ -233,7 +280,7 @@ class VeSync {
                 if (!this.api) {
                     throw new Error('The user is not logged in!');
                 }
-                this.debugMode.debug('[GET DEVICE INFO]', 'Getting device info...');
+                this.debugMode.debug('[GET DEVICE INFO]', 'Fetching...');
                 for (let attempt = 0; attempt < 2; attempt++) {
                     const response = await retryWithBackoff(() => this.api.post('cloud/v2/deviceManaged/bypassV2', {
                         ...this.generateV2Body(fan, humidifier ? HumidifierBypassMethod.STATUS : BypassMethod.STATUS),
@@ -245,6 +292,7 @@ class VeSync {
                     if (response.data.code !== 0 && response.data.code !== undefined) {
                         const errorCode = response.data.code;
                         if (isTokenInvalidCode(errorCode) && attempt === 0) {
+                            this.clearPersistedSession();
                             const loginSuccess = await this.loginInternal();
                             if (loginSuccess)
                                 continue;
@@ -258,15 +306,40 @@ class VeSync {
                 return null;
             }
             catch (error) {
-                const errorMessage = (error === null || error === void 0 ? void 0 : error.message) || 'Unknown error';
-                this.log.error(`Failed to get device info for ${fan === null || fan === void 0 ? void 0 : fan.name}`, errorMessage);
+                this.log.error(`Device info error for ${fan === null || fan === void 0 ? void 0 : fan.name}:`, error === null || error === void 0 ? void 0 : error.message);
                 return null;
             }
         });
     }
     async startSession() {
         this.debugMode.debug('[START SESSION]', 'Starting auth session...');
-        const firstLoginSuccess = await this.login();
+        // Versuche zuerst, gespeicherte Session zu laden
+        const persisted = this.loadPersistedSession();
+        if (persisted) {
+            this.token = persisted.token;
+            this.accountId = persisted.accountId;
+            this.baseURL = persisted.baseURL;
+            this.tokenExpiresAt = persisted.expiresAt;
+            this.api = axios_1.default.create({
+                ...this.AXIOS_OPTIONS,
+                headers: {
+                    'content-type': 'application/json',
+                    'accept-language': this.LANG,
+                    accountid: this.accountId,
+                    'user-agent': this.AGENT,
+                    appversion: this.APP_VERSION,
+                    tz: this.TIMEZONE,
+                    tk: this.token
+                }
+            });
+            this.log.info('Reusing persisted VeSync session');
+            this.debugMode.debug('[SESSION]', `Token expires: ${this.tokenExpiresAt ? new Date(this.tokenExpiresAt).toISOString() : 'unknown'}`);
+        }
+        else {
+            const loginSuccess = await this.login();
+            if (!loginSuccess)
+                return false;
+        }
         if (this.loginInterval) {
             clearInterval(this.loginInterval);
         }
@@ -275,7 +348,7 @@ class VeSync {
             this.debugMode.debug('[TOKEN REFRESH]', 'Refreshing token...');
             await this.login();
         }, 1000 * 60 * 55);
-        return firstLoginSuccess;
+        return true;
     }
     stopSession() {
         if (this.loginInterval) {
@@ -287,14 +360,8 @@ class VeSync {
     async login() {
         return lock.acquire('api-call', async () => this.loginInternal());
     }
-    /**
-     * Neuer 2-Schritt-Auth-Flow (wie tsvesync)
-     * Step 1: authByPWDOrOTM -> authorizeCode
-     * Step 2: loginByAuthorizeCode4Vesync -> token, accountID
-     * Fallback: Legacy Login (/cloud/v1/user/login)
-     */
     async loginInternal() {
-        var _a, _b, _c, _d, _e;
+        var _a, _b;
         try {
             if (!this.email || !this.password) {
                 throw new Error('Email and password are required');
@@ -310,10 +377,8 @@ class VeSync {
                 'appVersion': this.APP_VERSION,
                 'clientVersion': this.CLIENT_VERSION
             };
-            // Versuche mit aktuellem Endpoint, dann ggf. alternate
             for (const baseUrl of [this.baseURL, this.getAlternateBaseURL()]) {
                 this.debugMode.debug('[LOGIN]', `Trying endpoint: ${baseUrl}`);
-                // === STEP 1: Get Authorization Code ===
                 const step1Body = {
                     email: this.email,
                     method: 'authByPWDOrOTM',
@@ -334,34 +399,24 @@ class VeSync {
                     sourceAppID: appId,
                     traceId: `APP${appId}${Math.floor(Date.now() / 1000)}`
                 };
-                this.debugMode.debug('[LOGIN]', 'Step 1: Getting authorization code...');
                 try {
                     const step1Response = await axios_1.default.post(`${baseUrl}/globalPlatform/api/accountAuth/v1/authByPWDOrOTM`, step1Body, { headers: authHeaders, timeout: 15000 });
                     if (!(step1Response === null || step1Response === void 0 ? void 0 : step1Response.data) || step1Response.data.code !== 0) {
                         const code = (_a = step1Response === null || step1Response === void 0 ? void 0 : step1Response.data) === null || _a === void 0 ? void 0 : _a.code;
-                        const msg = (_b = step1Response === null || step1Response === void 0 ? void 0 : step1Response.data) === null || _b === void 0 ? void 0 : _b.msg;
-                        this.debugMode.debug('[LOGIN]', `Step 1 failed: ${msg} (${code})`);
-                        // Bei Credential-Error sofort abbrechen
                         if (CREDENTIAL_ERROR_CODES.includes(code)) {
                             this.log.error('Login failed: Invalid email or password');
                             return false;
                         }
-                        // Bei Cross-Region-Error: nächsten Endpoint probieren
                         if (CROSS_REGION_ERROR_CODES.includes(code)) {
-                            this.debugMode.debug('[LOGIN]', 'Cross-region error, trying alternate endpoint...');
+                            this.debugMode.debug('[LOGIN]', 'Cross-region error, trying alternate...');
                             continue;
                         }
-                        // Anderer Fehler in Step 1 -> Legacy-Flow probieren
-                        this.debugMode.debug('[LOGIN]', 'Step 1 failed, trying legacy login...');
                         return await this.loginLegacy(pwdHashed, baseUrl);
                     }
                     const { authorizeCode, bizToken } = step1Response.data.result || {};
-                    if (!authorizeCode) {
-                        this.debugMode.debug('[LOGIN]', 'No authorizeCode in Step 1 response');
+                    if (!authorizeCode)
                         continue;
-                    }
-                    this.debugMode.debug('[LOGIN]', 'Step 1 success, got authorizeCode');
-                    // === STEP 2: Login with Authorization Code ===
+                    this.debugMode.debug('[LOGIN]', 'Step 1 success');
                     const step2Body = {
                         method: 'loginByAuthorizeCode4Vesync',
                         authorizeCode: authorizeCode,
@@ -377,31 +432,24 @@ class VeSync {
                         userCountryCode: this.COUNTRY_CODE,
                         traceId: `APP${appId}${Math.floor(Date.now() / 1000)}`
                     };
-                    if (bizToken) {
+                    if (bizToken)
                         step2Body.bizToken = bizToken;
-                    }
-                    this.debugMode.debug('[LOGIN]', 'Step 2: Logging in with authorizeCode...');
                     const step2Response = await axios_1.default.post(`${baseUrl}/user/api/accountManage/v1/loginByAuthorizeCode4Vesync`, step2Body, { headers: authHeaders, timeout: 15000 });
                     if (!(step2Response === null || step2Response === void 0 ? void 0 : step2Response.data) || step2Response.data.code !== 0) {
-                        const code = (_c = step2Response === null || step2Response === void 0 ? void 0 : step2Response.data) === null || _c === void 0 ? void 0 : _c.code;
-                        const msg = (_d = step2Response === null || step2Response === void 0 ? void 0 : step2Response.data) === null || _d === void 0 ? void 0 : _d.msg;
-                        this.debugMode.debug('[LOGIN]', `Step 2 failed: ${msg} (${code})`);
-                        if (CROSS_REGION_ERROR_CODES.includes(code)) {
-                            this.debugMode.debug('[LOGIN]', 'Cross-region error in Step 2, trying alternate...');
+                        const code = (_b = step2Response === null || step2Response === void 0 ? void 0 : step2Response.data) === null || _b === void 0 ? void 0 : _b.code;
+                        if (CROSS_REGION_ERROR_CODES.includes(code))
                             continue;
-                        }
                         continue;
                     }
                     const { token, accountID } = step2Response.data.result || {};
-                    if (!token || !accountID) {
-                        this.debugMode.debug('[LOGIN]', 'Missing token/accountID in Step 2 response');
+                    if (!token || !accountID)
                         continue;
-                    }
-                    // Erfolg!
                     this.debugMode.debug('[LOGIN]', 'Authentication successful!');
                     this.baseURL = baseUrl;
                     this.token = token;
                     this.accountId = accountID;
+                    // Token-Ablauf berechnen (typisch 1 Jahr, aber wir refreshen alle 55 Min)
+                    this.tokenExpiresAt = Date.now() + (365 * 24 * 60 * 60 * 1000);
                     this.api = axios_1.default.create({
                         ...this.AXIOS_OPTIONS,
                         headers: {
@@ -414,6 +462,8 @@ class VeSync {
                             tk: this.token
                         }
                     });
+                    // Session persistieren
+                    this.saveSession();
                     await delay(500);
                     return true;
                 }
@@ -422,22 +472,14 @@ class VeSync {
                     continue;
                 }
             }
-            // Alle Endpoints fehlgeschlagen
             this.log.error('Login failed: Could not authenticate with any endpoint');
             return false;
         }
         catch (error) {
-            const errorMessage = ((_e = error === null || error === void 0 ? void 0 : error.response) === null || _e === void 0 ? void 0 : _e.data)
-                ? JSON.stringify(error.response.data)
-                : (error === null || error === void 0 ? void 0 : error.message) || 'Unknown error';
-            this.log.error('Login failed', errorMessage);
-            this.debugMode.debug('[LOGIN]', 'Error:', errorMessage);
+            this.log.error('Login failed:', error === null || error === void 0 ? void 0 : error.message);
             return false;
         }
     }
-    /**
-     * Legacy Login als Fallback (wie vorher)
-     */
     async loginLegacy(pwdHashed, baseUrl) {
         this.debugMode.debug('[LOGIN LEGACY]', 'Trying legacy login...');
         try {
@@ -461,18 +503,16 @@ class VeSync {
                 timeout: 15000
             });
             if (!(response === null || response === void 0 ? void 0 : response.data) || (response.data.code !== 0 && response.data.code !== undefined)) {
-                this.debugMode.debug('[LOGIN LEGACY]', 'Failed:', JSON.stringify(response === null || response === void 0 ? void 0 : response.data));
                 return false;
             }
             const { token, accountID } = response.data.result || {};
-            if (!token || !accountID) {
-                this.debugMode.debug('[LOGIN LEGACY]', 'Missing token/accountID');
+            if (!token || !accountID)
                 return false;
-            }
             this.debugMode.debug('[LOGIN LEGACY]', 'Success!');
             this.baseURL = baseUrl;
             this.token = token;
             this.accountId = accountID;
+            this.tokenExpiresAt = Date.now() + (365 * 24 * 60 * 60 * 1000);
             this.api = axios_1.default.create({
                 ...this.AXIOS_OPTIONS,
                 headers: {
@@ -485,6 +525,7 @@ class VeSync {
                     tk: this.token
                 }
             });
+            this.saveSession();
             await delay(500);
             return true;
         }
@@ -514,7 +555,7 @@ class VeSync {
                     if (response.data.code !== 0 && response.data.code !== undefined) {
                         const errorCode = response.data.code;
                         if (isTokenInvalidCode(errorCode) && attempt === 0) {
-                            this.debugMode.debug('[GET DEVICES]', 'Token expired, re-login...');
+                            this.clearPersistedSession();
                             const loginSuccess = await this.loginInternal();
                             if (loginSuccess)
                                 continue;
@@ -531,7 +572,6 @@ class VeSync {
                         type === 'wifi-air' &&
                         !!(extension === null || extension === void 0 ? void 0 : extension.fanSpeedLevel))
                         .map(VeSyncFan_1.default.fromResponse(this));
-                    // Newer Vital purifiers
                     purifiers = purifiers.concat(list
                         .filter(({ deviceType, type, deviceProp }) => !!deviceTypes_1.default.find(({ isValid }) => isValid(deviceType)) &&
                         type === 'wifi-air' &&
@@ -556,8 +596,7 @@ class VeSync {
                 return { purifiers: [], humidifiers: [] };
             }
             catch (error) {
-                const errorMessage = (error === null || error === void 0 ? void 0 : error.message) || 'Unknown error';
-                this.log.error('Failed to get devices', errorMessage);
+                this.log.error('Failed to get devices:', error === null || error === void 0 ? void 0 : error.message);
                 return { purifiers: [], humidifiers: [] };
             }
         });

@@ -22,9 +22,8 @@ export type VeSyncPlatformAccessory = PlatformAccessory<VeSyncContext | VeSyncAd
 export interface Config extends PlatformConfig {
     experimentalFeatures: ExperimentalFeatures[];
     enableDebugMode?: boolean;
-    vesyncAppVersion?: string;
-    vesyncDeviceId?: string;
     countryCode?: string;
+    updateInterval?: number;
     password: string;
     email: string;
 }
