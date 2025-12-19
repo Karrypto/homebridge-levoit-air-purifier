@@ -9,14 +9,14 @@ A Homebridge plugin to control Levoit Air Purifiers via the VeSync platform with
 
 ## Supported Devices
 
-| Model | Tested | Speed Levels |
-|-------|--------|--------------|
-| Core 600S | ✅ (Original) | Sleep, 1-4 |
-| Core 400S Pro | ✅ (Original) | Sleep, 1-4 |
-| Core 400S | ✅ (Original) | Sleep, 1-4 |
+| Model | Supported | Speed Levels |
+|-------|-----------|--------------|
+| Core 600S | ✅ | Sleep, 1-4 |
+| Core 400S Pro | ✅ | Sleep, 1-4 |
+| Core 400S | ✅ | Sleep, 1-4 |
 | Core 300S / 300S Pro | ✅ | Sleep, 1-3 |
-| Core 200S | ✅ (Original) | Sleep, 1-3 |
-| Vital 100S / 200S | ✅ (Original) | Sleep, 1-3 |
+| Core 200S | ✅ | Sleep, 1-3 |
+| Vital 100S / 200S | ✅ | Sleep, 1-3 |
 
 **Note:** Devices below 200 (e.g. 131S) are not supported as they require API v1.
 
