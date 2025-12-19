@@ -89,6 +89,24 @@ export default class VeSyncFan implements VeSyncGeneric {
     this.deviceCategory = this.model.includes('V') ? 'Vital' : 'Core';
   }
 
+  /**
+   * Custom toJSON to prevent circular reference errors when Homebridge saves cached accessories.
+   * Excludes the VeSync client reference which contains timers.
+   */
+  public toJSON() {
+    return {
+      name: this.name,
+      uuid: this.uuid,
+      configModule: this.configModule,
+      cid: this.cid,
+      region: this.region,
+      model: this.model,
+      mac: this.mac,
+      manufacturer: this.manufacturer,
+      deviceCategory: this.deviceCategory
+    };
+  }
+
   public async setChildLock(lock: boolean): Promise<boolean> {
     const data = this.deviceCategory === 'Vital' ? {
       childLockSwitch: lock ? 1 : 0

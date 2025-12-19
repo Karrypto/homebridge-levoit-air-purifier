@@ -76,6 +76,23 @@ class VeSyncFan {
         this.deviceType = deviceTypes_1.default.find(({ isValid }) => isValid(this.model));
         this.deviceCategory = this.model.includes('V') ? 'Vital' : 'Core';
     }
+    /**
+     * Custom toJSON to prevent circular reference errors when Homebridge saves cached accessories.
+     * Excludes the VeSync client reference which contains timers.
+     */
+    toJSON() {
+        return {
+            name: this.name,
+            uuid: this.uuid,
+            configModule: this.configModule,
+            cid: this.cid,
+            region: this.region,
+            model: this.model,
+            mac: this.mac,
+            manufacturer: this.manufacturer,
+            deviceCategory: this.deviceCategory
+        };
+    }
     async setChildLock(lock) {
         const data = this.deviceCategory === 'Vital' ? {
             childLockSwitch: lock ? 1 : 0

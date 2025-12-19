@@ -69,6 +69,22 @@ class VeSyncHumidifier {
         this.manufacturer = 'Levoit';
         this.deviceType = deviceTypes_1.humidifierDeviceTypes.find(({ isValid }) => isValid(this.model));
     }
+    /**
+     * Custom toJSON to prevent circular reference errors when Homebridge saves cached accessories.
+     * Excludes the VeSync client reference which contains timers.
+     */
+    toJSON() {
+        return {
+            name: this.name,
+            uuid: this.uuid,
+            configModule: this.configModule,
+            cid: this.cid,
+            region: this.region,
+            model: this.model,
+            mac: this.mac,
+            manufacturer: this.manufacturer
+        };
+    }
     async setPower(power) {
         const success = await this.client.sendCommand(this, VeSync_1.HumidifierBypassMethod.SWITCH, {
             enabled: power,

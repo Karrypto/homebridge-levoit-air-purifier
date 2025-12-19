@@ -40,6 +40,20 @@ export default class VeSyncHumidifier implements VeSyncGeneric {
     get mode(): Mode;
     get currentState(): 0 | 1 | 2;
     constructor(client: VeSync, name: string, uuid: string, _isOn: boolean, cid: string, region: string, model: string, mac: string, configModule: string);
+    /**
+     * Custom toJSON to prevent circular reference errors when Homebridge saves cached accessories.
+     * Excludes the VeSync client reference which contains timers.
+     */
+    toJSON(): {
+        name: string;
+        uuid: string;
+        configModule: string;
+        cid: string;
+        region: string;
+        model: string;
+        mac: string;
+        manufacturer: string;
+    };
     setPower(power: boolean): Promise<boolean>;
     setTarget(value: number): Promise<boolean>;
     setMode(mode: Mode): Promise<boolean>;

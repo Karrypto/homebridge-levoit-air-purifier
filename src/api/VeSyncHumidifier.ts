@@ -82,6 +82,23 @@ export default class VeSyncHumidifier implements VeSyncGeneric {
         this.deviceType = humidifierDeviceTypes.find(({ isValid }) => isValid(this.model))!;
     }
 
+    /**
+     * Custom toJSON to prevent circular reference errors when Homebridge saves cached accessories.
+     * Excludes the VeSync client reference which contains timers.
+     */
+    public toJSON() {
+        return {
+            name: this.name,
+            uuid: this.uuid,
+            configModule: this.configModule,
+            cid: this.cid,
+            region: this.region,
+            model: this.model,
+            mac: this.mac,
+            manufacturer: this.manufacturer
+        };
+    }
+
     public async setPower(power: boolean): Promise<boolean> {
         const success = await this.client.sendCommand(this, HumidifierBypassMethod.SWITCH, {
             enabled: power,

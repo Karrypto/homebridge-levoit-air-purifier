@@ -44,6 +44,21 @@ export default class VeSyncFan implements VeSyncGeneric {
     get isOn(): boolean;
     get pm25(): number;
     constructor(client: VeSync, name: string, _mode: Mode, _speed: number, uuid: string, _isOn: boolean, _airQualityLevel: AirQuality, configModule: string, cid: string, region: string, model: string, mac: string);
+    /**
+     * Custom toJSON to prevent circular reference errors when Homebridge saves cached accessories.
+     * Excludes the VeSync client reference which contains timers.
+     */
+    toJSON(): {
+        name: string;
+        uuid: string;
+        configModule: string;
+        cid: string;
+        region: string;
+        model: string;
+        mac: string;
+        manufacturer: string;
+        deviceCategory: DeviceCategory;
+    };
     setChildLock(lock: boolean): Promise<boolean>;
     setPower(power: boolean): Promise<boolean>;
     changeMode(mode: Mode): Promise<boolean>;
