@@ -40,6 +40,8 @@ export type VeSyncPlatformAccessory = PlatformAccessory<
 export interface Config extends PlatformConfig {
   experimentalFeatures: ExperimentalFeatures[];
   enableDebugMode?: boolean;
+  vesyncAppVersion?: string;
+  vesyncDeviceId?: string;
   password: string;
   email: string;
 }
@@ -61,7 +63,7 @@ export default class Platform implements DynamicPlatformPlugin {
     public readonly config: Config,
     public readonly api: API
   ) {
-    const { email, password, enableDebugMode } = this.config ?? {};
+    const { email, password, enableDebugMode, vesyncAppVersion, vesyncDeviceId } = this.config ?? {};
     this.debugger = new DebugMode(!!enableDebugMode, this.log);
 
     try {
@@ -73,7 +75,10 @@ export default class Platform implements DynamicPlatformPlugin {
 
       this.debugger.debug('[PLATFORM]', 'Debug mode enabled');
 
-      this.client = new VeSync(email, password, this.debugger, log);
+      this.client = new VeSync(email, password, this.debugger, log, {
+        appVersion: vesyncAppVersion,
+        deviceId: vesyncDeviceId,
+      });
 
       this.api.on('didFinishLaunching', () => {
         this.discoverDevices();

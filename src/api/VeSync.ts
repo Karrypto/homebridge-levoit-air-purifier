@@ -76,6 +76,13 @@ const retryWithBackoff = async <T>(
 const isTokenInvalidCode = (code: unknown) =>
   code === -11012001 || code === -11012002;
 
+export interface VeSyncClientOptions {
+  /** Override für die VeSync App-Version (Server-Gatekeeping). */
+  appVersion?: string;
+  /** Stabile Device-ID / devToken (einige Backends verlangen das beim Login). */
+  deviceId?: string;
+}
+
 export default class VeSync {
   private api?: AxiosInstance;
   private accountId?: string;
@@ -84,12 +91,14 @@ export default class VeSync {
 
   // VeSync Server blockiert gelegentlich zu alte appVersion Werte ("app version is too low").
   // Daher nutzen wir hier eine "moderne" App-Version als Kompatibilitätswert.
-  private readonly APP_VERSION = '5.7.60';
+  private readonly APP_VERSION: string;
+  private readonly DEVICE_ID: string;
   // WICHTIG: VeSync validiert die App-Version offenbar auch (oder primär) über den User-Agent Prefix `VeSync/VeSync <version>`.
   // Daher muss hier ebenfalls eine "moderne" App-Version stehen, sonst kommt `app version is too low`.
-  private readonly AGENT = `VeSync/VeSync ${this.APP_VERSION}(F5321;HomeBridge-VeSync)`;
-  private readonly TIMEZONE = 'America/New_York';
-  private readonly OS = 'HomeBridge-VeSync';
+  private readonly AGENT: string;
+  private readonly TIMEZONE = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  // Wir imitieren für die API bewusst ein Android-Device-Fingerprint, da VeSync Server teilweise nach Client-Typ gatekeept.
+  private readonly OS = 'Android';
   private readonly LANG = 'en';
 
   private readonly AXIOS_OPTIONS = {
@@ -101,13 +110,26 @@ export default class VeSync {
     private readonly email: string,
     private readonly password: string,
     public readonly debugMode: DebugMode,
-    public readonly log: Logger
-  ) { }
+    public readonly log: Logger,
+    private readonly options: VeSyncClientOptions = {}
+  ) {
+    this.APP_VERSION = this.options.appVersion ?? '5.7.60';
+
+    // Stabile Device-ID: wenn nicht gesetzt, deterministisch aus der E-Mail ableiten (UUID-like),
+    // damit sich die "Device Identität" über Neustarts nicht ändert.
+    const emailKey = (this.email ?? '').trim().toLowerCase();
+    const hex = crypto.createHash('md5').update(emailKey).digest('hex'); // 32 chars
+    const derivedUuid = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
+    this.DEVICE_ID = this.options.deviceId ?? derivedUuid;
+
+    this.AGENT = `VeSync/VeSync ${this.APP_VERSION}(F5321;HomeBridge-VeSync)`;
+  }
 
   private generateDetailBody() {
     return {
       appVersion: this.APP_VERSION,
-      phoneBrand: this.OS,
+      // VeSync erwartet hier in der Praxis mobile-like Felder
+      phoneBrand: 'samsung',
       traceId: Date.now(),
       phoneOS: this.OS
     };
@@ -381,7 +403,7 @@ export default class VeSync {
         {
           email: this.email,
           password: pwdHashed,
-          devToken: '',
+          devToken: this.DEVICE_ID,
           userType: 1,
           method: 'login',
           token: '',

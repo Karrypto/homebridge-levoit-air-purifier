@@ -23,6 +23,17 @@
         "required": true,
         "description": "VeSync's account password"
       },
+      "vesyncAppVersion": {
+        "title": "VeSync App Version (Advanced)",
+        "type": "string",
+        "default": "5.7.60",
+        "description": "Override der VeSync App-Version. Falls Login fehlschlägt mit 'app version is too low', hier erhöhen (z.B. 5.8.0)."
+      },
+      "vesyncDeviceId": {
+        "title": "VeSync Device ID / devToken (Advanced)",
+        "type": "string",
+        "description": "Optional: feste Device-ID (devToken) für den Login. Standard ist eine stabile, aus der Email abgeleitete ID."
+      },
       "enableDebugMode": {
         "title": "Enable Debug Mode",
         "type": "boolean",
